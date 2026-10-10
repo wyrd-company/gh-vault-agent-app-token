@@ -14,7 +14,7 @@ GH_TOKEN="$(gh vault-agent-app-token)" gh pr list
 ## Usage
 
 ```
-gh vault-agent-app-token [--owner OWNER] [--login LOGIN] [--repo OWNER/REPO] [--force] [--json]
+gh vault-agent-app-token [--owner OWNER] [--login LOGIN] [--repo [HOST/]OWNER/REPO] [--hostname HOST] [--force] [--json]
 gh vault-agent-app-token --print-jwt            # debugging: emit the signed App JWT only
 gh vault-agent-app-token --list                 # print known logins and their configured keys
 ```
@@ -80,8 +80,8 @@ current git repo (https or ssh GitHub URLs, or `GH_HOST`). A static
 `installations:` entry wins; otherwise the App's installations are listed and
 matched on `account.login`, case-insensitively.
 
-The GitHub host is the one in a host-qualified `--repo` or `GH_REPO`, else
-`GH_HOST`, else github.com. GitHub Enterprise Server hosts use
+The GitHub host is `--hostname`, else the one in a host-qualified `--repo` or
+`GH_REPO`, else `GH_HOST`, else github.com. GitHub Enterprise Server hosts use
 `https://HOST/api/v3`; `*.ghe.com` hosts use `https://api.HOST`.
 
 ### Agent address and credentials
@@ -136,7 +136,9 @@ more than 300 s remain and the entry was minted by the configured App. A per-ent
 
 [`contrib/gh-shim.sh`](contrib/gh-shim.sh) is a drop-in `gh` wrapper for agent
 containers. Put it on `PATH` ahead of the real `gh` as `gh`. It mints a token
-for every call (passing `--repo`/`-R` through so the owner matches), sets
+for every call (passing `--repo`/`-R` and `--hostname`, or `-h` for `gh auth`,
+through so owner and host match), drops any inherited `GH_TOKEN`,
+`GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN`, sets
 `GH_TOKEN` (or `GH_ENTERPRISE_TOKEN` when the target is a GitHub Enterprise
 Server host) and execs the real `gh`. `gh auth status` runs against a temporary
 `GH_CONFIG_DIR`. If minting fails the shim exits with the extension's code;

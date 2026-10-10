@@ -78,9 +78,21 @@ func ParseRepo(repo string) (host, owner string, err error) {
 
 // ResolveTarget picks the installation owner: flag, --repo, GH_REPO,
 // GH_OWNER, GH_ORG, then the origin remote of the git repo containing cwd.
-// The host comes from a host-qualified --repo or GH_REPO, else GH_HOST.
-func ResolveTarget(flagOwner, flagRepo string, getenv func(string) string, originURL func() string) (Target, error) {
+// The host is flagHost (a command's --hostname) if set, else the host of a
+// host-qualified --repo or GH_REPO, else GH_HOST.
+func ResolveTarget(flagOwner, flagRepo, flagHost string, getenv func(string) string, originURL func() string) (Target, error) {
+	t, err := resolveTarget(flagOwner, flagRepo, flagHost, getenv, originURL)
+	if err == nil && flagHost != "" {
+		t.Host = NormalizeHost(flagHost)
+	}
+	return t, err
+}
+
+func resolveTarget(flagOwner, flagRepo, flagHost string, getenv func(string) string, originURL func() string) (Target, error) {
 	ghHost := NormalizeHost(getenv("GH_HOST"))
+	if flagHost != "" {
+		ghHost = NormalizeHost(flagHost)
+	}
 	if flagOwner != "" {
 		return Target{ghHost, flagOwner}, nil
 	}

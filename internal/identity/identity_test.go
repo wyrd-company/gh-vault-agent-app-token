@@ -66,40 +66,45 @@ func TestResolveTargetOrder(t *testing.T) {
 	tests := []struct {
 		name        string
 		owner, repo string
+		host        string
 		env         map[string]string
 		origin      func() string
 		want        Target
 	}{
-		{"flag", "flag-o", "repo-o/r", map[string]string{"GH_OWNER": "e"}, origin, Target{"", "flag-o"}},
-		{"flag keeps GH_HOST", "flag-o", "", map[string]string{"GH_HOST": "GHE.example.com"}, origin, Target{"ghe.example.com", "flag-o"}},
-		{"repo", "", "repo-o/r", map[string]string{"GH_OWNER": "e", "GH_REPO": "env-o/r"}, origin, Target{"", "repo-o"}},
-		{"repo with host", "", "ghe.example.com/repo-o/r", nil, origin, Target{"ghe.example.com", "repo-o"}},
-		{"repo host beats GH_HOST", "", "github.com/repo-o/r", map[string]string{"GH_HOST": "ghe.example.com"}, origin, Target{"", "repo-o"}},
-		{"repo without host uses GH_HOST", "", "repo-o/r", map[string]string{"GH_HOST": "ghe.example.com"}, origin, Target{"ghe.example.com", "repo-o"}},
-		{"GH_REPO", "", "", map[string]string{"GH_REPO": "env-o/r", "GH_OWNER": "owner-env"}, origin, Target{"", "env-o"}},
-		{"GH_REPO with host", "", "", map[string]string{"GH_REPO": "ghe.example.com/env-o/r"}, origin, Target{"ghe.example.com", "env-o"}},
-		{"GH_OWNER", "", "", map[string]string{"GH_OWNER": "owner-env", "GH_ORG": "org-env"}, origin, Target{"", "owner-env"}},
-		{"GH_ORG", "", "", map[string]string{"GH_ORG": "org-env"}, origin, Target{"", "org-env"}},
-		{"git origin", "", "", nil, origin, Target{"", "from-git"}},
+		{"flag", "flag-o", "repo-o/r", "", map[string]string{"GH_OWNER": "e"}, origin, Target{"", "flag-o"}},
+		{"flag keeps GH_HOST", "flag-o", "", "", map[string]string{"GH_HOST": "GHE.example.com"}, origin, Target{"ghe.example.com", "flag-o"}},
+		{"repo", "", "repo-o/r", "", map[string]string{"GH_OWNER": "e", "GH_REPO": "env-o/r"}, origin, Target{"", "repo-o"}},
+		{"repo with host", "", "ghe.example.com/repo-o/r", "", nil, origin, Target{"ghe.example.com", "repo-o"}},
+		{"repo host beats GH_HOST", "", "github.com/repo-o/r", "", map[string]string{"GH_HOST": "ghe.example.com"}, origin, Target{"", "repo-o"}},
+		{"repo without host uses GH_HOST", "", "repo-o/r", "", map[string]string{"GH_HOST": "ghe.example.com"}, origin, Target{"ghe.example.com", "repo-o"}},
+		{"GH_REPO", "", "", "", map[string]string{"GH_REPO": "env-o/r", "GH_OWNER": "owner-env"}, origin, Target{"", "env-o"}},
+		{"GH_REPO with host", "", "", "", map[string]string{"GH_REPO": "ghe.example.com/env-o/r"}, origin, Target{"ghe.example.com", "env-o"}},
+		{"GH_OWNER", "", "", "", map[string]string{"GH_OWNER": "owner-env", "GH_ORG": "org-env"}, origin, Target{"", "owner-env"}},
+		{"GH_ORG", "", "", "", map[string]string{"GH_ORG": "org-env"}, origin, Target{"", "org-env"}},
+		{"git origin", "", "", "", nil, origin, Target{"", "from-git"}},
+		{"hostname beats GH_HOST", "", "", "GHE.example.com", map[string]string{"GH_HOST": "github.com", "GH_OWNER": "o"}, origin, Target{"ghe.example.com", "o"}},
+		{"hostname beats repo host", "", "github.com/repo-o/r", "ghe.example.com", nil, origin, Target{"ghe.example.com", "repo-o"}},
+		{"hostname github.com", "flag-o", "", "github.com", map[string]string{"GH_HOST": "ghe.example.com"}, origin, Target{"", "flag-o"}},
+		{"hostname matches origin", "", "", "ghe.example.com", nil, func() string { return "git@ghe.example.com:corp/svc.git" }, Target{"ghe.example.com", "corp"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ResolveTarget(tc.owner, tc.repo, envMap(tc.env), tc.origin)
+			got, err := ResolveTarget(tc.owner, tc.repo, tc.host, envMap(tc.env), tc.origin)
 			if err != nil || got != tc.want {
 				t.Fatalf("got %+v, %v; want %+v", got, err, tc.want)
 			}
 		})
 	}
-	if _, err := ResolveTarget("", "", envMap(nil), func() string { return "" }); !errors.Is(err, ErrNoOwner) {
+	if _, err := ResolveTarget("", "", "", envMap(nil), func() string { return "" }); !errors.Is(err, ErrNoOwner) {
 		t.Fatalf("want ErrNoOwner, got %v", err)
 	}
-	if _, err := ResolveTarget("", "", envMap(nil), func() string { return "https://gitlab.com/a/b.git" }); !errors.Is(err, ErrNoOwner) {
+	if _, err := ResolveTarget("", "", "", envMap(nil), func() string { return "https://gitlab.com/a/b.git" }); !errors.Is(err, ErrNoOwner) {
 		t.Fatalf("non-GitHub remote: want ErrNoOwner, got %v", err)
 	}
-	if _, err := ResolveTarget("", "noslash", envMap(nil), nil); err == nil {
+	if _, err := ResolveTarget("", "noslash", "", envMap(nil), nil); err == nil {
 		t.Fatal("want error for malformed --repo")
 	}
-	if _, err := ResolveTarget("", "", envMap(map[string]string{"GH_REPO": "bad"}), nil); err == nil || !strings.Contains(err.Error(), "GH_REPO") {
+	if _, err := ResolveTarget("", "", "", envMap(map[string]string{"GH_REPO": "bad"}), nil); err == nil || !strings.Contains(err.Error(), "GH_REPO") {
 		t.Fatalf("want GH_REPO error, got %v", err)
 	}
 }

@@ -74,13 +74,13 @@ func fail(code int, format string, a ...any) error {
 }
 
 type options struct {
-	owner, login, repo, agentAddr string
-	force, json, printJWT, list   bool
-	verbose                       bool
+	owner, login, repo, hostname, agentAddr string
+	force, json, printJWT, list             bool
+	verbose                                 bool
 }
 
 const usage = `Usage:
-  gh vault-agent-app-token [--owner OWNER] [--login LOGIN] [--repo OWNER/REPO] [--force] [--json]
+  gh vault-agent-app-token [--owner OWNER] [--login LOGIN] [--repo [HOST/]OWNER/REPO] [--hostname HOST] [--force] [--json]
   gh vault-agent-app-token --print-jwt [--login LOGIN]
   gh vault-agent-app-token --list
 
@@ -99,6 +99,7 @@ func parseFlags(args []string, stderr io.Writer) (*options, error) {
 	fs.StringVar(&o.login, "login", "", "App bot login to mint for, e.g. my-app[bot]")
 	fs.StringVar(&o.repo, "repo", "", "OWNER/REPO; its owner selects the installation")
 	fs.StringVar(&o.repo, "R", "", "shorthand for --repo")
+	fs.StringVar(&o.hostname, "hostname", "", "GitHub host to mint for (overrides --repo host and GH_HOST)")
 	fs.StringVar(&o.agentAddr, "agent-addr", "", "OpenBao/Vault Agent address")
 	fs.BoolVar(&o.force, "force", false, "ignore the token cache")
 	fs.BoolVar(&o.json, "json", false, "print token details as JSON")
@@ -205,7 +206,7 @@ func run(env Env) error {
 		return err
 	}
 
-	target, err := identity.ResolveTarget(o.owner, o.repo, env.Getenv, env.OriginURL)
+	target, err := identity.ResolveTarget(o.owner, o.repo, o.hostname, env.Getenv, env.OriginURL)
 	if err != nil {
 		return fail(ExitUsage, "%v", err)
 	}
