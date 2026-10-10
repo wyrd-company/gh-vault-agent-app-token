@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  OPENBAO_VERSION: 2.4.1
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install OpenBao
+        run: |
+          mkdir -p "$RUNNER_TEMP/bao"
+          curl -fsSL "https://github.com/openbao/openbao/releases/download/v${OPENBAO_VERSION}/bao_${OPENBAO_VERSION}_Linux_x86_64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP/bao" bao
+          echo "BAO_BIN=$RUNNER_TEMP/bao/bao" >> "$GITHUB_ENV"
+      - run: go test -tags integration -run Integration -v ./internal/cli/
+      - run: bash -n contrib/gh-shim.sh && bash contrib/test-shim.sh
