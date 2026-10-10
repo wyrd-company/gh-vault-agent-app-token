@@ -146,6 +146,7 @@ bash contrib/test-shim.sh
 go test -tags integration -run Integration -v ./internal/cli/
 ```
 
-Releases: push a `v*` tag; the workflow publishes
+Releases: push a version tag without a `v` prefix (e.g. `1.2.0`; a tag
+containing `-` becomes a prerelease); the workflow publishes
 `gh-vault-agent-app-token_<tag>_<os>-<arch>` binaries for linux/amd64,
 linux/arm64, darwin/arm64 and windows/amd64.
