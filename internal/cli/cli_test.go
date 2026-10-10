@@ -95,7 +95,7 @@ func TestMintAndCache(t *testing.T) {
 	// Cache file content and permissions.
 	p := filepath.Join(h.env["XDG_CACHE_HOME"], "gh-vault-agent-app-token", "test-app_bot___acme")
 	b, err := os.ReadFile(p)
-	if err != nil || !strings.Contains(string(b), "\tghs_fake_77_2\t77\n") {
+	if err != nil || !strings.Contains(string(b), "\tghs_fake_77_2\t77\t1001\n") {
 		t.Fatalf("cache file %q %v", b, err)
 	}
 }
@@ -108,6 +108,42 @@ func TestExpiredCacheRemints(t *testing.T) {
 	code, out, _ := h.run("--owner", "acme")
 	if code != 0 || out != "ghs_fake_77_2" {
 		t.Fatalf("expected re-mint inside skew window, got %d %q", code, out)
+	}
+}
+
+func TestCacheScopedByHostAndApp(t *testing.T) {
+	h := newHarness(t, "")
+	h.env["GH_LOGIN"] = testLogin
+	if code, out, _ := h.run("--owner", "acme"); code != 0 || out != "ghs_fake_77_1" {
+		t.Fatalf("code=%d out=%q", code, out)
+	}
+	// Same login/owner on another host must not reuse the github.com token.
+	h.env["GH_HOST"] = "ghe.example.com"
+	if code, out, _ := h.run("--owner", "acme"); code != 0 || out != "ghs_fake_77_2" {
+		t.Fatalf("GHES reused github.com token: code=%d out=%q", code, out)
+	}
+	if code, out, _ := h.run("--repo", "github.com/acme/x"); code != 0 || out != "ghs_fake_77_1" {
+		t.Fatalf("host-qualified --repo should select the github.com entry: code=%d out=%q", code, out)
+	}
+	// An entry minted by a different App is not reused.
+	delete(h.env, "GH_HOST")
+	p := filepath.Join(h.env["XDG_CACHE_HOME"], "gh-vault-agent-app-token", "test-app_bot___acme")
+	exp := time.Now().Add(time.Hour).Unix()
+	if err := os.WriteFile(p, []byte(fmt.Sprintf("%d\tghs_other_app\t77\t999\n", exp)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := h.run("--owner", "acme"); code != 0 || out != "ghs_fake_77_3" {
+		t.Fatalf("token from another App reused: code=%d out=%q", code, out)
+	}
+}
+
+func TestGHRepo(t *testing.T) {
+	h := newHarness(t, "")
+	h.env["GH_LOGIN"] = testLogin
+	h.env["GH_REPO"] = "third/widgets"
+	h.origin = "git@github.com:acme/widgets.git"
+	if code, out, errs := h.run(); code != 0 || out != "ghs_fake_9_1" {
+		t.Fatalf("GH_REPO must beat origin: code=%d out=%q err=%s", code, out, errs)
 	}
 }
 

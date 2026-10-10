@@ -74,11 +74,15 @@ A resolved login without an `apps:` entry is exit 2 `no app configured for '<log
 
 ### Which installation (owner)
 
-`--owner`; the owner of `--repo` (`OWNER/REPO` or `HOST/OWNER/REPO`); `GH_OWNER`;
-`GH_ORG`; the owner of the `origin` remote of the current git repo (https or
-ssh GitHub URLs, or `GH_HOST`). A static `installations:` entry wins; otherwise
-the App's installations are listed and matched on `account.login`,
-case-insensitively.
+`--owner`; the owner of `--repo` (`OWNER/REPO` or `HOST/OWNER/REPO`); the owner
+of `GH_REPO`; `GH_OWNER`; `GH_ORG`; the owner of the `origin` remote of the
+current git repo (https or ssh GitHub URLs, or `GH_HOST`). A static
+`installations:` entry wins; otherwise the App's installations are listed and
+matched on `account.login`, case-insensitively.
+
+The GitHub host is the one in a host-qualified `--repo` or `GH_REPO`, else
+`GH_HOST`, else github.com. GitHub Enterprise Server hosts use
+`https://HOST/api/v3`; `*.ghe.com` hosts use `https://api.HOST`.
 
 ### Agent address and credentials
 
@@ -89,8 +93,7 @@ First set wins: `--agent-addr`, `GH_VAULT_APP_TOKEN_AGENT_ADDR`, config
 No token header is sent unless `BAO_TOKEN` or `VAULT_TOKEN` is set, in which
 case it is sent as `X-Vault-Token` (useful for talking to a server directly).
 For `https://`, `BAO_CACERT`/`VAULT_CACERT` and
-`BAO_SKIP_VERIFY`/`VAULT_SKIP_VERIFY` are honoured. `GH_HOST` selects a GitHub
-Enterprise Server API (`https://$GH_HOST/api/v3`).
+`BAO_SKIP_VERIFY`/`VAULT_SKIP_VERIFY` are honoured.
 
 ## Transit setup
 
@@ -123,9 +126,10 @@ listener "tcp" {
 
 Installation tokens (never JWTs) are cached in
 `$XDG_CACHE_HOME/gh-vault-agent-app-token` (else `~/.cache/...`, mode 0700),
-one file per `<login>__<owner>` (mode 0600, content
-`<expires_epoch>\t<token>\t<installation_id>\n`), and reused while more than
-300 s remain. A per-entry lock file serialises concurrent invocations.
+one file per `<login>__<owner>` (plus `__<host>` for hosts other than
+github.com; mode 0600, content
+`<expires_epoch>\t<token>\t<installation_id>\t<app_id>\n`), and reused while
+more than 300 s remain and the entry was minted by the configured App. A per-entry lock file serialises concurrent invocations.
 `--force` skips the cache.
 
 ## gh shim
@@ -133,7 +137,8 @@ one file per `<login>__<owner>` (mode 0600, content
 [`contrib/gh-shim.sh`](contrib/gh-shim.sh) is a drop-in `gh` wrapper for agent
 containers. Put it on `PATH` ahead of the real `gh` as `gh`. It mints a token
 for every call (passing `--repo`/`-R` through so the owner matches), sets
-`GH_TOKEN` and execs the real `gh`. `gh auth status` runs against a temporary
+`GH_TOKEN` (or `GH_ENTERPRISE_TOKEN` when the target is a GitHub Enterprise
+Server host) and execs the real `gh`. `gh auth status` runs against a temporary
 `GH_CONFIG_DIR`. If minting fails the shim exits with the extension's code;
 it never falls back to a user login.
 

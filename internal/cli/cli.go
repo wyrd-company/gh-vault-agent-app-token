@@ -40,7 +40,7 @@ type Env struct {
 	Now    func() time.Time
 	// OriginURL returns the origin remote of the git repo containing the cwd.
 	OriginURL func() string
-	// GitHubBaseURL overrides the API root derived from GH_HOST.
+	// GitHubBaseURL overrides the API root derived from the target host.
 	GitHubBaseURL string
 }
 
@@ -205,14 +205,16 @@ func run(env Env) error {
 		return err
 	}
 
-	owner, err := identity.ResolveOwner(o.owner, o.repo, env.Getenv, env.OriginURL)
+	target, err := identity.ResolveTarget(o.owner, o.repo, env.Getenv, env.OriginURL)
 	if err != nil {
 		return fail(ExitUsage, "%v", err)
 	}
+	owner := target.Owner
+	scope := cache.Scope{Login: login, Owner: owner, Host: target.Host}
 
 	ghBase := env.GitHubBaseURL
 	if ghBase == "" {
-		ghBase = github.BaseURL(env.Getenv("GH_HOST"))
+		ghBase = github.BaseURL(target.Host)
 	}
 	gh := &github.Client{BaseURL: ghBase, HTTP: &http.Client{Transport: wrapRT(http.DefaultTransport, wrap), Timeout: 30 * time.Second}}
 
@@ -224,7 +226,7 @@ func run(env Env) error {
 		store = nil
 	}
 	if store != nil {
-		unlock, err := store.Lock(login, owner)
+		unlock, err := store.Lock(scope)
 		if err != nil {
 			fmt.Fprintf(env.Stderr, "%s: warning: token cache disabled: %v\n", prog, err)
 			store = nil
@@ -234,7 +236,7 @@ func run(env Env) error {
 	}
 
 	if store != nil && !o.force {
-		if e := store.Get(login, owner); e.Valid(env.Now()) {
+		if e := store.Get(scope); e.Valid(env.Now()) && e.AppID == app.AppID {
 			if e.InstallationID == 0 {
 				e.InstallationID, _ = app.Installation(owner)
 			}
@@ -265,9 +267,9 @@ func run(env Env) error {
 	if err != nil {
 		return &exitError{ExitGitHub, err}
 	}
-	e := &cache.Entry{Expires: tok.ExpiresAt, Token: tok.Token, InstallationID: iid}
+	e := &cache.Entry{Expires: tok.ExpiresAt, Token: tok.Token, InstallationID: iid, AppID: app.AppID}
 	if store != nil {
-		if err := store.Put(login, owner, e); err != nil {
+		if err := store.Put(scope, e); err != nil {
 			fmt.Fprintf(env.Stderr, "%s: warning: writing token cache: %v\n", prog, err)
 		}
 	}

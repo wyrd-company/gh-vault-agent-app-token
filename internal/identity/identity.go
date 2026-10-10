@@ -49,40 +49,67 @@ func ResolveLogin(flagLogin string, getenv func(string) string, harnesses map[st
 
 var ErrNoOwner = errors.New("can't determine target org (use --owner, --repo, or set GH_OWNER)")
 
-// OwnerFromRepo extracts the owner from OWNER/REPO or HOST/OWNER/REPO.
-func OwnerFromRepo(repo string) (string, error) {
+// Target is the installation owner and the GitHub host it lives on.
+type Target struct {
+	Host  string // "" for github.com, else a GitHub Enterprise Server host
+	Owner string
+}
+
+// NormalizeHost lowercases host and maps github.com to "".
+func NormalizeHost(host string) string {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h == "github.com" || h == "api.github.com" {
+		return ""
+	}
+	return h
+}
+
+// ParseRepo splits OWNER/REPO or HOST/OWNER/REPO. Host is "" when absent.
+func ParseRepo(repo string) (host, owner string, err error) {
 	parts := strings.Split(strings.Trim(repo, "/"), "/")
 	switch {
 	case len(parts) == 2 && parts[0] != "" && parts[1] != "":
-		return parts[0], nil
-	case len(parts) == 3 && parts[1] != "" && parts[2] != "":
-		return parts[1], nil
+		return "", parts[0], nil
+	case len(parts) == 3 && parts[0] != "" && parts[1] != "" && parts[2] != "":
+		return parts[0], parts[1], nil
 	}
-	return "", fmt.Errorf("invalid --repo %q (want OWNER/REPO)", repo)
+	return "", "", fmt.Errorf("invalid repository %q (want [HOST/]OWNER/REPO)", repo)
 }
 
-// ResolveOwner picks the installation owner: flag, --repo, GH_OWNER, GH_ORG,
-// then the origin remote of the git repo containing cwd.
-func ResolveOwner(flagOwner, flagRepo string, getenv func(string) string, originURL func() string) (string, error) {
+// ResolveTarget picks the installation owner: flag, --repo, GH_REPO,
+// GH_OWNER, GH_ORG, then the origin remote of the git repo containing cwd.
+// The host comes from a host-qualified --repo or GH_REPO, else GH_HOST.
+func ResolveTarget(flagOwner, flagRepo string, getenv func(string) string, originURL func() string) (Target, error) {
+	ghHost := NormalizeHost(getenv("GH_HOST"))
 	if flagOwner != "" {
-		return flagOwner, nil
+		return Target{ghHost, flagOwner}, nil
 	}
-	if flagRepo != "" {
-		return OwnerFromRepo(flagRepo)
+	for _, r := range []struct{ name, val string }{{"--repo", flagRepo}, {"GH_REPO", getenv("GH_REPO")}} {
+		if r.val == "" {
+			continue
+		}
+		host, owner, err := ParseRepo(r.val)
+		if err != nil {
+			return Target{}, fmt.Errorf("%s: %w", r.name, err)
+		}
+		if host == "" {
+			host = ghHost
+		}
+		return Target{NormalizeHost(host), owner}, nil
 	}
 	for _, k := range []string{"GH_OWNER", "GH_ORG"} {
 		if v := getenv(k); v != "" {
-			return v, nil
+			return Target{ghHost, v}, nil
 		}
 	}
 	if originURL != nil {
 		if u := originURL(); u != "" {
-			if o, ok := OwnerFromRemote(u, getenv("GH_HOST")); ok {
-				return o, nil
+			if o, ok := OwnerFromRemote(u, ghHost); ok {
+				return Target{ghHost, o}, nil
 			}
 		}
 	}
-	return "", ErrNoOwner
+	return Target{}, ErrNoOwner
 }
 
 // GitOrigin returns the origin remote URL of the repo containing dir, or "".

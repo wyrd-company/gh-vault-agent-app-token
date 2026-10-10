@@ -49,6 +49,7 @@ type Entry struct {
 	Expires        time.Time
 	Token          string
 	InstallationID int64 // 0 if unknown
+	AppID          int64 // App that minted the token; 0 if unknown
 }
 
 // Valid reports whether e can be reused at now.
@@ -56,16 +57,17 @@ func (e *Entry) Valid(now time.Time) bool {
 	return e != nil && e.Token != "" && e.Expires.Sub(now) > Skew
 }
 
-// Format renders "<expires_epoch>\t<token>[\t<installation_id>]\n".
+// Format renders
+// "<expires_epoch>\t<token>[\t<installation_id>\t<app_id>]\n".
 func (e *Entry) Format() string {
 	s := strconv.FormatInt(e.Expires.Unix(), 10) + "\t" + e.Token
-	if e.InstallationID > 0 {
-		s += "\t" + strconv.FormatInt(e.InstallationID, 10)
+	if e.InstallationID > 0 || e.AppID > 0 {
+		s += "\t" + strconv.FormatInt(e.InstallationID, 10) + "\t" + strconv.FormatInt(e.AppID, 10)
 	}
 	return s + "\n"
 }
 
-// Parse reads a cache file's content. The third field is optional.
+// Parse reads a cache file's content. Fields after the token are optional.
 func Parse(data string) (*Entry, error) {
 	line := strings.TrimRight(strings.SplitN(data, "\n", 2)[0], "\r")
 	f := strings.Split(line, "\t")
@@ -79,6 +81,9 @@ func Parse(data string) (*Entry, error) {
 	e := &Entry{Expires: time.Unix(exp, 0), Token: f[1]}
 	if len(f) > 2 {
 		e.InstallationID, _ = strconv.ParseInt(f[2], 10, 64)
+	}
+	if len(f) > 3 {
+		e.AppID, _ = strconv.ParseInt(f[3], 10, 64)
 	}
 	return e, nil
 }
@@ -97,13 +102,24 @@ func Open(dir string) (*Store, error) {
 	return &Store{Dir: dir}, nil
 }
 
-func (s *Store) path(login, owner string) string {
-	return filepath.Join(s.Dir, Sanitize(login+"__"+strings.ToLower(owner)))
+// Scope identifies one cache entry. Tokens for different GitHub hosts never
+// share an entry.
+type Scope struct {
+	Login, Owner string
+	Host         string // "" for github.com
+}
+
+func (s *Store) path(sc Scope) string {
+	name := sc.Login + "__" + strings.ToLower(sc.Owner)
+	if sc.Host != "" {
+		name += "__" + strings.ToLower(sc.Host)
+	}
+	return filepath.Join(s.Dir, Sanitize(name))
 }
 
 // Lock takes the exclusive per-entry lock. Call the returned func to release.
-func (s *Store) Lock(login, owner string) (func(), error) {
-	f, err := os.OpenFile(s.path(login, owner)+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+func (s *Store) Lock(sc Scope) (func(), error) {
+	f, err := os.OpenFile(s.path(sc)+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -118,8 +134,8 @@ func (s *Store) Lock(login, owner string) (func(), error) {
 }
 
 // Get returns the cached entry, or nil if missing or unreadable.
-func (s *Store) Get(login, owner string) *Entry {
-	data, err := os.ReadFile(s.path(login, owner))
+func (s *Store) Get(sc Scope) *Entry {
+	data, err := os.ReadFile(s.path(sc))
 	if err != nil {
 		return nil
 	}
@@ -131,8 +147,8 @@ func (s *Store) Get(login, owner string) *Entry {
 }
 
 // Put atomically writes the entry with mode 0600.
-func (s *Store) Put(login, owner string, e *Entry) error {
-	p := s.path(login, owner)
+func (s *Store) Put(sc Scope, e *Entry) error {
+	p := s.path(sc)
 	tmp, err := os.CreateTemp(s.Dir, filepath.Base(p)+".tmp*")
 	if err != nil {
 		return err

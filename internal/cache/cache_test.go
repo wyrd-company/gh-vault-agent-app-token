@@ -38,9 +38,12 @@ func TestFormatParse(t *testing.T) {
 	if got := e.Format(); got != "1700003600\tghs_abc\n" {
 		t.Fatalf("format = %q", got)
 	}
-	e.InstallationID = 42
+	e.InstallationID, e.AppID = 42, 1001
+	if got := e.Format(); got != "1700003600\tghs_abc\t42\t1001\n" {
+		t.Fatalf("format = %q", got)
+	}
 	p, err := Parse(e.Format())
-	if err != nil || p.Token != "ghs_abc" || p.Expires.Unix() != 1700003600 || p.InstallationID != 42 {
+	if err != nil || p.Token != "ghs_abc" || p.Expires.Unix() != 1700003600 || p.InstallationID != 42 || p.AppID != 1001 {
 		t.Fatalf("parse = %+v %v", p, err)
 	}
 	// File written by the original shell shim.
@@ -67,16 +70,20 @@ func TestStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Get("a[bot]", "Acme") != nil {
+	sc := Scope{Login: "a[bot]", Owner: "Acme"}
+	if s.Get(sc) != nil {
 		t.Fatal("expected miss")
 	}
 	e := &Entry{Expires: time.Unix(1700003600, 0), Token: "ghs_x", InstallationID: 7}
-	if err := s.Put("a[bot]", "Acme", e); err != nil {
+	if err := s.Put(sc, e); err != nil {
 		t.Fatal(err)
 	}
-	got := s.Get("a[bot]", "acme") // owner is case-insensitive
+	got := s.Get(Scope{Login: "a[bot]", Owner: "acme"}) // owner is case-insensitive
 	if got == nil || got.Token != "ghs_x" {
 		t.Fatalf("got %+v", got)
+	}
+	if s.Get(Scope{Login: "a[bot]", Owner: "Acme", Host: "ghe.example.com"}) != nil {
+		t.Fatal("entries must not be shared across hosts")
 	}
 	p := filepath.Join(dir, "a_bot___acme")
 	if runtime.GOOS != "windows" {
@@ -103,7 +110,7 @@ func TestLockSerialises(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			unlock, err := s.Lock("a", "b")
+			unlock, err := s.Lock(Scope{Login: "a", Owner: "b"})
 			if err != nil {
 				t.Error(err)
 				return

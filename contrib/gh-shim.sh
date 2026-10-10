@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # gh shim for agent containers: install as `gh` early on PATH. Every gh call
-# runs with GH_TOKEN set to a GitHub App installation token minted by
-# `gh vault-agent-app-token` for the current agent identity.
+# runs with GH_TOKEN (GH_ENTERPRISE_TOKEN for GitHub Enterprise Server) set to
+# a GitHub App installation token minted by `gh vault-agent-app-token` for the
+# current agent identity.
 #
 # If minting fails, its stderr is shown and the shim exits with its code;
 # there is no fallback to a user login.
@@ -26,27 +27,43 @@ case "${1:-}" in
 esac
 
 # An explicit --repo/-R selects the installation owner, as gh would use it.
-mint_args=()
+# (GH_REPO is read by the extension itself.)
+repo=""
 prev=""
 for a in "$@"; do
-  case "$prev" in --repo | -R) mint_args=(--repo "$a"); break ;; esac
+  case "$prev" in --repo | -R) repo="$a"; break ;; esac
   case "$a" in
     --) break ;;
-    --repo=* | -R=*) mint_args=(--repo "${a#*=}"); break ;;
-    -R?*) mint_args=(--repo "${a#-R}"); break ;;
+    --repo=* | -R=*) repo="${a#*=}"; break ;;
+    -R?*) repo="${a#-R}"; break ;;
   esac
   prev="$a"
 done
+mint_args=()
+[ -n "$repo" ] && mint_args=(--repo "$repo")
 
 token="$("$real_gh" vault-agent-app-token ${mint_args[@]+"${mint_args[@]}"})" || exit $?
+
+# gh reads GH_TOKEN for github.com (and *.ghe.com) but GH_ENTERPRISE_TOKEN for
+# GitHub Enterprise Server hosts. Resolve the target host the same way the
+# extension does: host-qualified --repo, then GH_REPO, then GH_HOST.
+target="${repo:-${GH_REPO:-}}"
+host="${GH_HOST:-github.com}"
+case "$target" in */*/*) host="${target%%/*}" ;; esac
+host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+case "$host" in
+  github.com | *.ghe.com) token_var=GH_TOKEN ;;
+  *) token_var=GH_ENTERPRISE_TOKEN ;;
+esac
+export "$token_var=$token"
 
 if [ "${1:-}" = "auth" ] && [ "${2:-}" = "status" ]; then
   # Isolated config dir so status reports the token, not a stored login.
   tmp_config="$(mktemp -d)"
   trap 'rm -rf "$tmp_config"' EXIT
   rc=0
-  GH_TOKEN="$token" GH_CONFIG_DIR="$tmp_config" "$real_gh" "$@" || rc=$?
+  GH_CONFIG_DIR="$tmp_config" "$real_gh" "$@" || rc=$?
   exit "$rc"
 fi
 
-GH_TOKEN="$token" exec "$real_gh" "$@"
+exec "$real_gh" "$@"

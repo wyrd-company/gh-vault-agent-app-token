@@ -12,13 +12,16 @@ import (
 	"time"
 )
 
-// BaseURL returns the REST API root for GH_HOST (empty → github.com).
-func BaseURL(ghHost string) string {
-	h := strings.ToLower(strings.TrimSpace(ghHost))
-	if h == "" || h == "github.com" || h == "api.github.com" {
+// BaseURL returns the REST API root for a host ("" → github.com).
+func BaseURL(host string) string {
+	h := strings.ToLower(strings.TrimSpace(host))
+	switch {
+	case h == "" || h == "github.com" || h == "api.github.com":
 		return "https://api.github.com"
+	case strings.HasSuffix(h, ".ghe.com"):
+		return "https://api." + h
 	}
-	return "https://" + ghHost + "/api/v3"
+	return "https://" + h + "/api/v3"
 }
 
 // Client calls the GitHub REST API with an App JWT.
