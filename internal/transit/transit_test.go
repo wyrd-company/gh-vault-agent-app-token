@@ -1,3 +1,11 @@
+/*
+---
+relationships:
+
+	tests: internal/transit/transit
+
+---
+*/
 package transit
 
 import (
@@ -6,6 +14,13 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -123,5 +138,161 @@ func TestSignErrors(t *testing.T) {
 	_, err = c.SignRS256("k", []byte("x"))
 	if e, ok := err.(*Error); !ok || e.Status != 0 || !strings.Contains(err.Error(), "unreachable") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestResolveUnixAddr(t *testing.T) {
+	const addr = "unix:///x"
+	for _, source := range []string{"flag", "config", "GH_VAULT_APP_TOKEN_AGENT_ADDR", "BAO_AGENT_ADDR", "VAULT_AGENT_ADDR", "BAO_ADDR", "VAULT_ADDR"} {
+		t.Run(source, func(t *testing.T) {
+			flag, config := "", ""
+			if source == "flag" {
+				flag = addr
+			}
+			if source == "config" {
+				config = addr
+			}
+			got := ResolveAddr(flag, config, func(k string) string {
+				if k == source {
+					return addr
+				}
+				return ""
+			})
+			if got != addr {
+				t.Fatalf("got %q, want %q", got, addr)
+			}
+		})
+	}
+}
+
+func socketPath(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix socket test requires a Unix host")
+	}
+	// Keep the path short enough for macOS sockaddr_un, including under CI.
+	dir, err := os.MkdirTemp("", "transit-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "agent.sock")
+}
+
+func TestSignUnixSocket(t *testing.T) {
+	path := socketPath(t)
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/custom/sign/example-key" || r.Host != "localhost" {
+			t.Errorf("unexpected request: %s %s host=%s", r.Method, r.URL.Path, r.Host)
+		}
+		if got := r.Header.Get("X-Vault-Token"); got != r.Header.Get("Expected-Token") {
+			t.Errorf("token: %q", got)
+		}
+		var body signRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Input != "aGVhZGVyLmNsYWltcw==" || body.SignatureAlgorithm != "pkcs1v15" || body.HashAlgorithm != "sha2-256" || body.MarshalingAlg != "jws" {
+			t.Errorf("unexpected body: %+v", body)
+		}
+		w.Write([]byte(`{"data":{"signature":"vault:v1:c2lnbmF0dXJl"}}`))
+	}))
+	server.Listener.Close()
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+	// A configured proxy must never intercept local socket requests.
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	for _, mode := range []string{"default", "configured", "token"} {
+		t.Run(mode, func(t *testing.T) {
+			c := &Client{Addr: "unix://" + path, Mount: "custom"}
+			if mode != "default" {
+				if mode == "token" {
+					c.Token = "example-token"
+				}
+				hc, err := NewHTTPClient(c.Addr, func(k string) string {
+					if strings.HasSuffix(k, "CACERT") {
+						return "/missing/example-ca.pem"
+					}
+					if strings.HasSuffix(k, "SKIP_VERIFY") {
+						return "true"
+					}
+					return ""
+				}, func(rt http.RoundTripper) http.RoundTripper {
+					transport := rt.(*http.Transport)
+					if transport.Proxy != nil || (transport.TLSClientConfig != nil && (transport.TLSClientConfig.InsecureSkipVerify || transport.TLSClientConfig.RootCAs != nil)) {
+						t.Error("Unix socket transport must bypass proxies and TLS")
+					}
+					return tokenExpectation{rt: rt, token: c.Token}
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer hc.CloseIdleConnections()
+				c.HTTP = hc
+			}
+			sig, err := c.SignRS256("example-key", []byte("header.claims"))
+			if err != nil || sig != "c2lnbmF0dXJl" {
+				t.Fatalf("sig=%q err=%v", sig, err)
+			}
+		})
+	}
+}
+
+type tokenExpectation struct {
+	rt    http.RoundTripper
+	token string
+}
+
+func (e tokenExpectation) RoundTrip(r *http.Request) (*http.Response, error) {
+	r.Header.Set("Expected-Token", e.token)
+	return e.rt.RoundTrip(r)
+}
+
+func TestUnixSocketConnectionErrors(t *testing.T) {
+	for _, kind := range []string{"missing", "refused"} {
+		t.Run(kind, func(t *testing.T) {
+			path := socketPath(t)
+			if kind == "refused" {
+				l, err := net.Listen("unix", path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				l.(*net.UnixListener).SetUnlinkOnClose(false)
+				l.Close()
+			}
+			c := &Client{Addr: "unix://" + path, Mount: "transit"}
+			_, err := c.SignRS256("example-key", []byte("input"))
+			e, ok := err.(*Error)
+			if !ok || e.Status != 0 || !strings.Contains(e.Error(), path) || !strings.Contains(e.Error(), "unreachable") {
+				t.Fatalf("got %v", err)
+			}
+		})
+	}
+}
+
+func TestUnixSocketRequiresAbsolutePath(t *testing.T) {
+	for _, addr := range []string{"unix://", "unix://relative/agent.sock"} {
+		if _, err := NewHTTPClient(addr, func(string) string { return "" }, nil); err == nil || !strings.Contains(err.Error(), "absolute") {
+			t.Fatalf("addr=%s err=%v", addr, err)
+		}
+	}
+}
+
+func TestHTTPClientTLSSettings(t *testing.T) {
+	for _, scheme := range []string{"http://localhost", "https://localhost"} {
+		if _, err := NewHTTPClient(scheme, func(k string) string {
+			if k == "VAULT_CACERT" {
+				return "/missing/example-ca.pem"
+			}
+			return ""
+		}, nil); err == nil {
+			t.Fatalf("%s must still load configured CA", scheme)
+		}
 	}
 }

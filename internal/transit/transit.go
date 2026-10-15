@@ -1,15 +1,23 @@
+/*
+---
+relationships:
+  references: README
+---
+*/
 // Package transit signs data with the Transit secrets engine of OpenBao or
 // HashiCorp Vault, normally through a local Agent listener.
 package transit
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,7 +29,7 @@ const DefaultAddr = "http://127.0.0.1:8100"
 
 // Client talks to the Transit sign endpoint.
 type Client struct {
-	Addr  string // e.g. http://127.0.0.1:8100
+	Addr  string // e.g. http://127.0.0.1:8100 or unix:///run/agent.sock
 	Mount string // e.g. transit
 	// Token is sent as X-Vault-Token when non-empty. Leave empty when going
 	// through an Agent listener that injects its auto-auth token.
@@ -78,9 +86,27 @@ func TokenFromEnv(getenv func(string) string) string {
 }
 
 // NewHTTPClient builds a client honouring BAO_CACERT/VAULT_CACERT and
-// BAO_SKIP_VERIFY/VAULT_SKIP_VERIFY.
-func NewHTTPClient(getenv func(string) string, rt func(http.RoundTripper) http.RoundTripper) (*http.Client, error) {
+// BAO_SKIP_VERIFY/VAULT_SKIP_VERIFY. Unix socket addresses bypass TLS settings
+// and HTTP proxies.
+func NewHTTPClient(addr string, getenv func(string) string, rt func(http.RoundTripper) http.RoundTripper) (*http.Client, error) {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
+	if strings.HasPrefix(addr, "unix://") {
+		path := strings.TrimPrefix(addr, "unix://")
+		if !strings.HasPrefix(path, "/") {
+			return nil, fmt.Errorf("bad agent address %q: Unix socket path must be absolute", addr)
+		}
+		// The HTTP host is a placeholder; connect directly to the socket.
+		tr.Proxy = nil
+		tr.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", path)
+		}
+		var transport http.RoundTripper = tr
+		if rt != nil {
+			transport = rt(transport)
+		}
+		return &http.Client{Transport: transport, Timeout: 30 * time.Second}, nil
+	}
+
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	caFile := getenv("BAO_CACERT")
 	if caFile == "" {
@@ -164,7 +190,11 @@ func (c *Client) sign(key string, input []byte, marshaling string) (string, erro
 		HashAlgorithm:      "sha2-256",
 		MarshalingAlg:      marshaling,
 	})
-	u := strings.TrimRight(c.Addr, "/") + "/v1/" + strings.Trim(c.Mount, "/") + "/sign/" + url.PathEscape(key)
+	addr := c.Addr
+	if strings.HasPrefix(addr, "unix://") {
+		addr = "http://localhost"
+	}
+	u := strings.TrimRight(addr, "/") + "/v1/" + strings.Trim(c.Mount, "/") + "/sign/" + url.PathEscape(key)
 	req, err := http.NewRequest(http.MethodPost, u, bytes.NewReader(body))
 	if err != nil {
 		return "", &Error{Msg: fmt.Sprintf("bad agent address %q: %v", c.Addr, err)}
@@ -176,7 +206,15 @@ func (c *Client) sign(key string, input []byte, marshaling string) (string, erro
 	}
 	hc := c.HTTP
 	if hc == nil {
-		hc = http.DefaultClient
+		if strings.HasPrefix(c.Addr, "unix://") {
+			hc, err = NewHTTPClient(c.Addr, func(string) string { return "" }, nil)
+			if err != nil {
+				return "", &Error{Msg: err.Error()}
+			}
+			defer hc.CloseIdleConnections()
+		} else {
+			hc = http.DefaultClient
+		}
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
