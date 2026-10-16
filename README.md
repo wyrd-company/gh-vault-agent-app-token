@@ -1,3 +1,7 @@
+---
+relationships:
+  references: internal/transit/transit
+---
 # gh-vault-agent-app-token
 
 A GitHub CLI extension that mints a GitHub App **installation token** for an
@@ -89,6 +93,19 @@ The GitHub host is `--hostname`, else the one in a host-qualified `--repo` or
 First set wins: `--agent-addr`, `GH_VAULT_APP_TOKEN_AGENT_ADDR`, config
 `agent_addr`, `BAO_AGENT_ADDR`, `VAULT_AGENT_ADDR`, `BAO_ADDR`, `VAULT_ADDR`,
 `http://127.0.0.1:8100`.
+
+Addresses can use `http://`, `https://`, or `unix://<absolute socket path>`.
+For example, Wyrwood exposes the OpenBao API through a Unix socket:
+
+```sh
+export VAULT_ADDR=unix:///run/wyrwood/vault.sock
+export BAO_ADDR=unix:///run/wyrwood/vault.sock
+gh vault-agent-app-token --print-jwt
+```
+
+Wyrwood adds the container's token to each request. Unix socket requests use
+HTTP over the socket and ignore HTTP proxy and TLS settings
+(`BAO_CACERT`/`VAULT_CACERT`, `BAO_SKIP_VERIFY`/`VAULT_SKIP_VERIFY`).
 
 No token header is sent unless `BAO_TOKEN` or `VAULT_TOKEN` is set, in which
 case it is sent as `X-Vault-Token` (useful for talking to a server directly).

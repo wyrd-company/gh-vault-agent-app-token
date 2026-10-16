@@ -1,3 +1,11 @@
+/*
+---
+relationships:
+
+	tests: internal/cli/cli
+
+---
+*/
 package cli
 
 import (
@@ -6,8 +14,11 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -275,5 +286,37 @@ func TestVerboseRedacts(t *testing.T) {
 	}
 	if strings.Contains(errs, out) || strings.Contains(errs, "s.supersecret") || strings.Contains(errs, "eyJ") {
 		t.Fatalf("secret in debug log: %q", errs)
+	}
+}
+
+func TestMintThroughUnixSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix socket test requires a Unix host")
+	}
+	h := newHarness(t, "")
+	dir, err := os.MkdirTemp("", "cli-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "agent.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(h.transit.Config.Handler)
+	server.Listener.Close()
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+	h.env["GH_VAULT_APP_TOKEN_AGENT_ADDR"] = "unix://" + path
+	h.env["VAULT_CACERT"] = "/missing/example-ca.pem"
+	h.env["CLAUDECODE"] = "1"
+	code, out, errs := h.run("--owner", "acme", "--verbose")
+	if code != 0 || out != "ghs_fake_77_1" {
+		t.Fatalf("code=%d out=%q err=%q", code, out, errs)
+	}
+	if !strings.Contains(errs, "http://localhost/v1/transit/sign/gh-app-test") {
+		t.Fatalf("missing socket request log: %s", errs)
 	}
 }

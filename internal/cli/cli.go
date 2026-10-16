@@ -1,3 +1,9 @@
+/*
+---
+relationships:
+  references: README
+---
+*/
 // Package cli implements the gh vault-agent-app-token command.
 package cli
 
@@ -172,12 +178,13 @@ func run(env Env) error {
 	if o.verbose {
 		wrap = func(rt http.RoundTripper) http.RoundTripper { return &logTransport{rt: rt, w: env.Stderr} }
 	}
-	httpc, err := transit.NewHTTPClient(env.Getenv, wrap)
+	addr := transit.ResolveAddr(o.agentAddr, cfg.AgentAddr, env.Getenv)
+	httpc, err := transit.NewHTTPClient(addr, env.Getenv, wrap)
 	if err != nil {
 		return fail(ExitUsage, "%v", err)
 	}
 	tc := &transit.Client{
-		Addr:  transit.ResolveAddr(o.agentAddr, cfg.AgentAddr, env.Getenv),
+		Addr:  addr,
 		Mount: cfg.TransitMount,
 		Token: transit.TokenFromEnv(env.Getenv),
 		HTTP:  httpc,
