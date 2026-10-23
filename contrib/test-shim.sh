@@ -16,6 +16,7 @@ if [ "${1:-}" = vault-agent-app-token ]; then
   printf 'tok[%s]' "$*"
   exit 0
 fi
+[ -z "${FAKE_GH_EXIT:-}" ] || exit "$FAKE_GH_EXIT"
 if [ -n "${GH_ENTERPRISE_TOKEN:-}" ]; then
   printf 'enterprise=%s token=%s args=%s\n' "$GH_ENTERPRISE_TOKEN" "${GH_TOKEN:-}" "$*"
   exit 0
@@ -63,9 +64,31 @@ check "mint failure stderr" "gh vault-agent-app-token: transit down" "$err"
 
 check "extension passthrough" "tok[--json]" "$(gh vault-agent-app-token --json)"
 
+check "SHELL=fish does not bypass a bash caller" "token=tok[] config=unset args=pr list" "$(SHELL=/bin/fish gh pr list)"
+
+# Keep fish alive after gh so it remains the shim's parent even in shells
+# that can replace themselves with the final external command.
+if command -v fish >/dev/null 2>&1; then
+  fish_gh='gh $argv; set -l rc $status; exit $rc'
+  check "fish leaves authentication alone" "token=user config=unset args=pr list" "$(GH_TOKEN=user FAKE_MINT_FAIL=1 fish --no-config -c "$fish_gh" -- pr list)"
+  check "fish leaves auth status config alone" "token= config=/user-config args=auth status" "$(GH_CONFIG_DIR=/user-config FAKE_MINT_FAIL=1 fish --no-config -c "$fish_gh" -- auth status)"
+  check "fish leaves enterprise authentication alone" "enterprise=user-ghes token=user args=api /meta" "$(GH_TOKEN=user GH_ENTERPRISE_TOKEN=user-ghes FAKE_MINT_FAIL=1 fish --no-config -c "$fish_gh" -- api /meta)"
+  rc=0
+  FAKE_GH_EXIT=17 fish --no-config -c "$fish_gh" -- pr list >/dev/null || rc=$?
+  check "fish preserves real gh exit code" 17 "$rc"
+  check "bash started by fish still uses App authentication" "token=tok[] config=unset args=pr list" "$(fish --no-config -c 'bash -c '\''gh pr list; rc=$?; exit "$rc"'\''; set -l rc $status; exit $rc')"
+  mkdir -p "$work/no-ps"
+  printf '#!/usr/bin/env bash\nexit 1\n' >"$work/no-ps/ps"
+  chmod +x "$work/no-ps/ps"
+  check "failed parent inspection keeps App authentication" "token=tok[] config=unset args=pr list" "$(PATH="$work/no-ps:$PATH" fish --no-config -c "$fish_gh" -- pr list)"
+else
+  echo "skip fish checks (fish not found)"
+fi
+
 # With the real gh: its own credential selection must yield the App token for
 # the target host even when user tokens are inherited.
-real="$(PATH="${PATH#"$work/shim:$work/real:"}" command -v gh || true)"
+# Set GH_SHIM_TEST_REAL_GH to the actual binary when PATH already has a shim.
+real="${GH_SHIM_TEST_REAL_GH:-$(PATH="${PATH#"$work/shim:$work/real:"}" command -v gh || true)}"
 if [ -n "$real" ]; then
   mkdir -p "$work/data/gh/extensions/gh-vault-agent-app-token" "$work/config"
   mkdir -p "$work/realshim" && ln -s "$here/gh-shim.sh" "$work/realshim/gh"

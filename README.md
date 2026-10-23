@@ -241,8 +241,15 @@ more than 300 s remain and the entry was minted by the configured App. A per-ent
 ## gh shim
 
 [`contrib/gh-shim.sh`](contrib/gh-shim.sh) is a drop-in `gh` wrapper for agent
-containers. Put it on `PATH` ahead of the real `gh` as `gh`. It mints a token
-for every call (passing `--repo`/`-R` and `--hostname`, or `-h` for `gh auth`,
+containers and shared shell setups. Put it on `PATH` ahead of the real `gh` as
+`gh`. Calls directly from fish pass through to the real `gh` with their
+authentication environment and configuration unchanged, so interactive fish
+sessions can keep using their normal GitHub login. Detection uses the immediate
+parent process, not `$SHELL`; bash or zsh started from fish still use App
+authentication. Fish scripts calling `gh` directly also pass through.
+
+For other callers, it obtains an App token (reusing the extension's cache when
+valid, and passing `--repo`/`-R` and `--hostname`, or `-h` for `gh auth`,
 through so owner and host match), drops any inherited `GH_TOKEN`,
 `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN`, sets
 `GH_TOKEN` (or `GH_ENTERPRISE_TOKEN` when the target is a GitHub Enterprise

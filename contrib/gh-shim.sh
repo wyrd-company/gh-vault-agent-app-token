@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# gh shim for agent containers: install as `gh` early on PATH. Every gh call
-# runs with GH_TOKEN (GH_ENTERPRISE_TOKEN for GitHub Enterprise Server) set to
+# gh shim: install as `gh` early on PATH. Calls directly from fish pass through
+# with the caller's authentication unchanged. Other gh calls
+# run with GH_TOKEN (GH_ENTERPRISE_TOKEN for GitHub Enterprise Server) set to
 # a GitHub App installation token minted by `gh vault-agent-app-token` for the
 # current agent identity.
 #
@@ -20,6 +21,13 @@ for d in "${path_dirs[@]}"; do
   break
 done
 [ -n "$real_gh" ] || { echo "gh-shim: no real gh found on PATH" >&2; exit 127; }
+
+# Inspect the immediate caller, not $SHELL: an agent's bash/zsh can inherit
+# fish as the user's login shell. If inspection fails, keep App authentication.
+parent_command="$(ps -p "$PPID" -o comm= 2>/dev/null)" || parent_command=""
+case "${parent_command##*/}" in
+  fish | -fish) exec "$real_gh" "$@" ;;
+esac
 
 # Nothing to authenticate, or the extension itself: pass straight through.
 case "${1:-}" in
