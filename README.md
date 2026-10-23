@@ -259,6 +259,19 @@ token acquisition fails, the shim exits with the extension's code; it never
 falls back to a user login for that call. Unsupported harnesses can opt in with
 `GH_LOGIN`. Direct `gh vault-agent-app-token` calls always reach the extension.
 
+To run one command with your stored GitHub login, even inside an agent session:
+
+```sh
+gh --as-user pr create
+```
+
+`--as-user` is a shim flag and must appear immediately after `gh`, before the
+command. The shim removes it, skips App token acquisition, and clears inherited
+`GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, and `GITHUB_ENTERPRISE_TOKEN`
+so the real `gh` uses the active stored account for the target host. It preserves
+`GH_CONFIG_DIR` and does not switch accounts or change stored configuration. If
+no stored login exists, the command follows the real `gh`'s normal behavior.
+
 ## Development
 
 Go 1.25 or later is required by the Azure SDK dependencies.

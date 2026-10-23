@@ -21,6 +21,15 @@ for d in "${path_dirs[@]}"; do
 done
 [ -n "$real_gh" ] || { echo "gh-shim: no real gh found on PATH" >&2; exit 127; }
 
+# Explicit per-command opt-out: use gh's stored account for the target host.
+# Clear inherited tokens so even an App token from the caller cannot override it.
+# Consume only a leading flag, leaving command arguments and their values alone.
+if [ "${1:-}" = --as-user ]; then
+  shift
+  unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
+  exec "$real_gh" "$@"
+fi
+
 # Nothing to authenticate, or the extension itself: pass straight through.
 case "${1:-}" in
   "" | vault-agent-app-token) exec "$real_gh" "$@" ;;

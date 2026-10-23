@@ -49,6 +49,13 @@ check "unmarked extension passthrough" "tok[--json]" "$(gh vault-agent-app-token
 # Remaining checks exercise the agent path independently of the test runner.
 export CODEX_THREAD_ID=shim-test
 
+check "--as-user skips minting and preserves config" "token= config=/user-config args=auth status" "$(GH_TOKEN=app GITHUB_TOKEN=app GH_ENTERPRISE_TOKEN=app GITHUB_ENTERPRISE_TOKEN=app GH_CONFIG_DIR=/user-config FAKE_MINT_FAIL=1 gh --as-user auth status)"
+check "--as-user overrides explicit App login" "token= config=unset args=pr list" "$(GH_LOGIN=test-bot FAKE_MINT_FAIL=1 gh --as-user pr list)"
+rc=0
+FAKE_GH_EXIT=17 FAKE_MINT_FAIL=1 gh --as-user pr list >/dev/null 2>&1 || rc=$?
+check "--as-user preserves real gh exit code" 17 "$rc"
+check "--as-user in command arguments is not intercepted" "token=tok[] config=unset args=pr create --body --as-user" "$(gh pr create --body --as-user)"
+
 check "plain" "token=tok[] config=unset args=pr list" "$(gh pr list)"
 check "--repo X" "token=tok[--repo o/r] config=unset args=pr list --repo o/r" "$(gh pr list --repo o/r)"
 check "-R X" "token=tok[--repo o/r] config=unset args=pr list -R o/r" "$(gh pr list -R o/r)"
@@ -110,6 +117,28 @@ if [ -n "$real" ]; then
   check "real gh: GH_HOST GHES" fake-app-token "$(run_real env GH_HOST=ghe.example.com gh auth token 2>&1)"
   check "real gh: unmarked github.com keeps user token" fake-user-token "$(run_real env -u CODEX_THREAD_ID gh auth token --hostname github.com 2>&1)"
   check "real gh: unmarked GHES keeps user token" fake-user-token "$(run_real env -u CODEX_THREAD_ID gh auth token --hostname ghe.example.com 2>&1)"
+  cat >"$work/config/hosts.yml" <<'HOSTS'
+github.com:
+    oauth_token: stored-user-token
+    user: stored-user
+    users:
+        stored-user:
+            oauth_token: stored-user-token
+ghe.example.com:
+    oauth_token: stored-enterprise-token
+    user: stored-user
+    users:
+        stored-user:
+            oauth_token: stored-enterprise-token
+HOSTS
+  chmod 600 "$work/config/hosts.yml"
+  stored_config="$(cat "$work/config/hosts.yml")"
+  check "real gh: --as-user uses stored github.com login" stored-user-token "$(run_real gh --as-user auth token --hostname github.com 2>&1)"
+  check "real gh: --as-user uses stored GHES login" stored-enterprise-token "$(run_real gh --as-user auth token --hostname ghe.example.com 2>&1)"
+  rc=0
+  run_real gh --as-user auth token --hostname missing.example.com >/dev/null 2>&1 || rc=$?
+  check "real gh: --as-user without a stored login fails" 1 "$rc"
+  check "real gh: --as-user leaves stored configuration unchanged" "$stored_config" "$(cat "$work/config/hosts.yml")"
 else
   echo "skip real gh checks (gh not found)"
 fi
