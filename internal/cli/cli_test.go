@@ -111,6 +111,30 @@ func TestMintAndCache(t *testing.T) {
 	}
 }
 
+func TestCacheHitDoesNotInitializeSigner(t *testing.T) {
+	h := newHarness(t, "")
+	h.env["GH_LOGIN"] = testLogin
+	code, token, errs := h.run("--owner", "acme")
+	if code != 0 {
+		t.Fatalf("initial mint: code=%d err=%s", code, errs)
+	}
+	h.env["BAO_CACERT"] = filepath.Join(t.TempDir(), "missing-ca.pem")
+	code, out, errs := h.run("--owner", "acme")
+	if code != 0 || out != token {
+		t.Fatalf("cache hit: code=%d out=%q err=%s", code, out, errs)
+	}
+	for _, args := range [][]string{
+		{"--owner", "acme", "--force"},
+		{"--owner", "third"},
+		{"--print-jwt"},
+	} {
+		code, out, errs := h.run(args...)
+		if code != ExitUsage || out != "" || !strings.Contains(errs, "reading CA bundle") {
+			t.Fatalf("%v: code=%d out=%q err=%s", args, code, out, errs)
+		}
+	}
+}
+
 func TestExpiredCacheRemints(t *testing.T) {
 	h := newHarness(t, "")
 	h.env["GH_LOGIN"] = testLogin

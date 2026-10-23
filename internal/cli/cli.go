@@ -178,22 +178,22 @@ func run(env Env) error {
 	if o.verbose {
 		wrap = func(rt http.RoundTripper) http.RoundTripper { return &logTransport{rt: rt, w: env.Stderr} }
 	}
-	addr := transit.ResolveAddr(o.agentAddr, cfg.AgentAddr, env.Getenv)
-	httpc, err := transit.NewHTTPClient(addr, env.Getenv, wrap)
-	if err != nil {
-		return fail(ExitUsage, "%v", err)
-	}
-	tc := &transit.Client{
-		Addr:  addr,
-		Mount: cfg.TransitMount,
-		Token: transit.TokenFromEnv(env.Getenv),
-		HTTP:  httpc,
-	}
 
 	var appJWT string
 	signJWT := func() (string, error) {
 		if appJWT != "" {
 			return appJWT, nil
+		}
+		addr := transit.ResolveAddr(o.agentAddr, cfg.AgentAddr, env.Getenv)
+		httpc, err := transit.NewHTTPClient(addr, env.Getenv, wrap)
+		if err != nil {
+			return "", fail(ExitUsage, "%v", err)
+		}
+		tc := &transit.Client{
+			Addr:  addr,
+			Mount: cfg.TransitMount,
+			Token: transit.TokenFromEnv(env.Getenv),
+			HTTP:  httpc,
 		}
 		in := jwt.SigningInput(app.AppID, env.Now())
 		sig, err := tc.SignRS256(app.TransitKey, []byte(in))
