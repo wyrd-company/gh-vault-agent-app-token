@@ -24,17 +24,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wyrd-company/gh-vault-agent-app-token/internal/config"
+	"github.com/wyrd-company/gh-vault-agent-app-token/internal/jwt"
 	"github.com/wyrd-company/gh-vault-agent-app-token/internal/testutil"
 )
 
 const testLogin = "test-app[bot]"
 
 type harness struct {
-	t       *testing.T
-	env     map[string]string
-	transit *testutil.FakeTransit
-	gh      *testutil.FakeGitHub
-	origin  string
+	t              *testing.T
+	env            map[string]string
+	transit        *testutil.FakeTransit
+	gh             *testutil.FakeGitHub
+	origin         string
+	newAzureSigner func(*config.AzureKeyVault) (jwt.Signer, error)
 }
 
 var (
@@ -72,12 +75,13 @@ apps:
 func (h *harness) run(args ...string) (code int, stdout, stderr string) {
 	var out, errb bytes.Buffer
 	code = Run(Env{
-		Args:          args,
-		Getenv:        func(k string) string { return h.env[k] },
-		Stdout:        &out,
-		Stderr:        &errb,
-		OriginURL:     func() string { return h.origin },
-		GitHubBaseURL: h.gh.URL,
+		Args:           args,
+		Getenv:         func(k string) string { return h.env[k] },
+		Stdout:         &out,
+		Stderr:         &errb,
+		OriginURL:      func() string { return h.origin },
+		GitHubBaseURL:  h.gh.URL,
+		NewAzureSigner: h.newAzureSigner,
 	})
 	return code, out.String(), errb.String()
 }
