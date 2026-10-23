@@ -148,6 +148,36 @@ func TestCacheScopedByHostAndApp(t *testing.T) {
 	}
 }
 
+func TestCacheRespectsConfiguredInstallation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		cachedID  int64
+		wantToken string
+		wantCalls int
+	}{
+		{"matching installation", 4242, "ghs_cached", 1},
+		{"previous installation", 77, "ghs_fake_4242_2", 2},
+		{"unknown installation", 0, "ghs_fake_4242_2", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, "    installations:\n      Acme: 4242\n")
+			h.env["GH_LOGIN"] = testLogin
+			if code, _, errs := h.run("--owner", "acme"); code != 0 {
+				t.Fatalf("initial mint: code=%d err=%s", code, errs)
+			}
+			p := filepath.Join(h.env["XDG_CACHE_HOME"], "gh-vault-agent-app-token", "test-app_bot___acme")
+			entry := fmt.Sprintf("%d\tghs_cached\t%d\t1001\n", time.Now().Add(time.Hour).Unix(), tc.cachedID)
+			if err := os.WriteFile(p, []byte(entry), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, out, errs := h.run("--owner", "ACME")
+			if code != 0 || out != tc.wantToken || h.gh.TokenCalls != tc.wantCalls {
+				t.Fatalf("code=%d out=%q err=%s tokenCalls=%d", code, out, errs, h.gh.TokenCalls)
+			}
+		})
+	}
+}
+
 func TestGHRepo(t *testing.T) {
 	h := newHarness(t, "")
 	h.env["GH_LOGIN"] = testLogin
