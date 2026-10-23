@@ -19,6 +19,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
+
+	"github.com/wyrd-company/gh-vault-agent-app-token/internal/azurekeyvault"
 	"github.com/wyrd-company/gh-vault-agent-app-token/internal/cache"
 	"github.com/wyrd-company/gh-vault-agent-app-token/internal/config"
 	"github.com/wyrd-company/gh-vault-agent-app-token/internal/github"
@@ -33,7 +37,8 @@ const prog = "gh vault-agent-app-token"
 const (
 	ExitOK      = 0
 	ExitUsage   = 2
-	ExitTransit = 3
+	ExitSigner  = 3
+	ExitTransit = ExitSigner // retained for compatibility
 	ExitGitHub  = 4
 )
 
@@ -48,6 +53,8 @@ type Env struct {
 	OriginURL func() string
 	// GitHubBaseURL overrides the API root derived from the target host.
 	GitHubBaseURL string
+	// NewAzureSigner overrides Azure signer construction in tests.
+	NewAzureSigner func(*config.AzureKeyVault) (jwt.Signer, error)
 }
 
 // Main runs with the real process environment.
@@ -90,8 +97,8 @@ const usage = `Usage:
   gh vault-agent-app-token --print-jwt [--login LOGIN]
   gh vault-agent-app-token --list
 
-Mint a GitHub App installation token, signing the App JWT with an
-OpenBao/Vault Transit key through a local Agent listener.
+Mint a GitHub App installation token, signing the App JWT with a
+remote OpenBao/Vault Transit or Azure Key Vault key.
 
 Flags:
 `
@@ -184,21 +191,14 @@ func run(env Env) error {
 		if appJWT != "" {
 			return appJWT, nil
 		}
-		addr := transit.ResolveAddr(o.agentAddr, cfg.AgentAddr, env.Getenv)
-		httpc, err := transit.NewHTTPClient(addr, env.Getenv, wrap)
+		signer, err := newSigner(env, cfg, app, o, wrap)
 		if err != nil {
 			return "", fail(ExitUsage, "%v", err)
 		}
-		tc := &transit.Client{
-			Addr:  addr,
-			Mount: cfg.TransitMount,
-			Token: transit.TokenFromEnv(env.Getenv),
-			HTTP:  httpc,
-		}
 		in := jwt.SigningInput(app.AppID, env.Now())
-		sig, err := tc.SignRS256(app.TransitKey, []byte(in))
+		sig, err := signer.SignRS256([]byte(in))
 		if err != nil {
-			return "", &exitError{ExitTransit, err}
+			return "", &exitError{ExitSigner, err}
 		}
 		appJWT = jwt.Assemble(in, sig)
 		return appJWT, nil
@@ -281,6 +281,43 @@ func run(env Env) error {
 	return output(env.Stdout, o.json, e, login, owner)
 }
 
+// transitSigner binds a Transit client to the selected App key.
+type transitSigner struct {
+	client *transit.Client
+	key    string
+}
+
+func (s *transitSigner) SignRS256(input []byte) (string, error) {
+	return s.client.SignRS256(s.key, input)
+}
+
+func newSigner(env Env, cfg *config.Config, app *config.App, o *options, wrap func(http.RoundTripper) http.RoundTripper) (jwt.Signer, error) {
+	if app.Signer == config.SignerAzureKeyVault {
+		a := app.AzureKeyVault
+		if env.NewAzureSigner != nil {
+			return env.NewAzureSigner(a)
+		}
+		credential, err := azurekeyvault.Credential(a.Credential)
+		if err != nil {
+			return nil, err
+		}
+		return azurekeyvault.New(a.VaultURL, a.KeyName, a.KeyVersion, credential, &azkeys.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Transport: &http.Client{Transport: wrapRT(http.DefaultTransport, wrap), Timeout: 30 * time.Second},
+			},
+		})
+	}
+	addr := transit.ResolveAddr(o.agentAddr, cfg.AgentAddr, env.Getenv)
+	httpc, err := transit.NewHTTPClient(addr, env.Getenv, wrap)
+	if err != nil {
+		return nil, err
+	}
+	return &transitSigner{client: &transit.Client{
+		Addr: addr, Mount: cfg.TransitMount,
+		Token: transit.TokenFromEnv(env.Getenv), HTTP: httpc,
+	}, key: app.TransitKey}, nil
+}
+
 func wrapRT(rt http.RoundTripper, wrap func(http.RoundTripper) http.RoundTripper) http.RoundTripper {
 	if wrap == nil {
 		return rt
@@ -321,14 +358,22 @@ func list(w io.Writer, cfg *config.Config) error {
 		harnessOf[l] = append(harnessOf[l], h)
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "LOGIN\tAPP_ID\tTRANSIT_KEY\tHARNESS")
+	fmt.Fprintln(tw, "LOGIN\tAPP_ID\tSIGNER\tKEY\tHARNESS")
 	for _, l := range cfg.Logins() {
 		a := cfg.Apps[l]
 		h := strings.Join(harnessOf[l], ",")
 		if h == "" {
 			h = "-"
 		}
-		fmt.Fprintf(tw, "%s\t%d\t%s/%s\t%s\n", l, a.AppID, cfg.TransitMount, a.TransitKey, h)
+		key := cfg.TransitMount + "/" + a.TransitKey
+		if a.Signer == config.SignerAzureKeyVault {
+			az := a.AzureKeyVault
+			key = strings.TrimRight(az.VaultURL, "/") + "/keys/" + az.KeyName
+			if az.KeyVersion != "" {
+				key += "/" + az.KeyVersion
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\n", l, a.AppID, a.Signer, key, h)
 	}
 	return tw.Flush()
 }

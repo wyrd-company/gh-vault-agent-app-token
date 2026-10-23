@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+// Signer signs a JWT signing input remotely and returns an unpadded base64url signature.
+type Signer interface {
+	SignRS256(input []byte) (string, error)
+}
+
 const (
 	// Backdate iat to tolerate clock drift, as GitHub recommends.
 	IssuedAtSkew = 60 * time.Second

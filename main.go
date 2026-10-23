@@ -1,5 +1,5 @@
 // Command gh-vault-agent-app-token is a GitHub CLI extension that mints a
-// GitHub App installation token whose JWT is signed by OpenBao/Vault Transit.
+// GitHub App installation token whose JWT is signed remotely by OpenBao/Vault Transit or Azure Key Vault.
 package main
 
 import (
