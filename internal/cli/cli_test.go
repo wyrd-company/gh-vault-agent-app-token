@@ -139,6 +139,32 @@ func TestCacheHitDoesNotInitializeSigner(t *testing.T) {
 	}
 }
 
+func TestMintWithCopilotAndAntigravityMarkers(t *testing.T) {
+	for _, tc := range []struct{ marker, value, harness string }{
+		{"COPILOT_CLI", "true", "copilot"},
+		{"ANTIGRAVITY_AGENT", "1", "antigravity"},
+	} {
+		t.Run(tc.harness, func(t *testing.T) {
+			h := newHarness(t, "")
+			p := h.env["GH_VAULT_APP_TOKEN_CONFIG"]
+			data, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := strings.Replace(string(data), "harnesses:\n", fmt.Sprintf("harnesses:\n  %s: %s\n", tc.harness, testLogin), 1)
+			if err := os.WriteFile(p, []byte(cfg), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			h.env[tc.marker] = tc.value
+			h.env["CLAUDE_AGENT_SDK_VERSION"] = "0.3.276" // shared host metadata, not a Claude marker
+			code, out, errs := h.run("--owner", "acme")
+			if code != 0 || out != "ghs_fake_77_1" || h.transit.Calls.Load() != 1 {
+				t.Fatalf("code=%d out=%q err=%s signingCalls=%d", code, out, errs, h.transit.Calls.Load())
+			}
+		})
+	}
+}
+
 func TestExpiredCacheRemints(t *testing.T) {
 	h := newHarness(t, "")
 	h.env["GH_LOGIN"] = testLogin
