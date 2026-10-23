@@ -12,10 +12,11 @@ cat >"$work/real/gh" <<'FAKE'
 #!/usr/bin/env bash
 if [ "${1:-}" = vault-agent-app-token ]; then
   shift
-  [ -n "${FAKE_MINT_FAIL:-}" ] && { echo "gh vault-agent-app-token: transit down" >&2; exit 3; }
+  [ -n "${FAKE_MINT_FAIL:-}" ] && { echo "gh vault-agent-app-token: signing unavailable" >&2; exit "${FAKE_MINT_FAIL_CODE:-3}"; }
   printf 'tok[%s]' "$*"
   exit 0
 fi
+[ -z "${FAKE_GH_EXIT:-}" ] || exit "$FAKE_GH_EXIT"
 if [ -n "${GH_ENTERPRISE_TOKEN:-}" ]; then
   printf 'enterprise=%s token=%s args=%s\n' "$GH_ENTERPRISE_TOKEN" "${GH_TOKEN:-}" "$*"
   exit 0
@@ -25,11 +26,28 @@ FAKE
 chmod +x "$work/real/gh"
 
 export PATH="$work/shim:$work/real:$PATH"
-unset GH_TOKEN GH_CONFIG_DIR GH_ENTERPRISE_TOKEN GH_HOST GH_REPO
+unset GH_TOKEN GITHUB_TOKEN GH_CONFIG_DIR GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_REPO
+unset GH_LOGIN CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT
 fails=0
 check() { # name expected actual
   if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: want [$2] got [$3]"; fails=$((fails + 1)); fi
 }
+
+check "no agent marker: no mint" "token= config=unset args=pr list" "$(FAKE_MINT_FAIL=1 gh pr list)"
+check "no agent marker: preserve token and config" "token=user config=/user-config args=auth status" "$(GH_TOKEN=user GH_CONFIG_DIR=/user-config FAKE_MINT_FAIL=1 gh auth status)"
+check "no agent marker: preserve enterprise token" "enterprise=user-ghes token=user args=api /meta" "$(GH_TOKEN=user GH_ENTERPRISE_TOKEN=user-ghes FAKE_MINT_FAIL=1 gh api /meta)"
+check "empty markers: no mint" "token= config=unset args=pr list" "$(CLAUDECODE= CODEX_THREAD_ID= CURSOR_AGENT= PI_CODING_AGENT= COPILOT_CLI= ANTIGRAVITY_AGENT= GH_LOGIN= FAKE_MINT_FAIL=1 gh pr list)"
+rc=0
+FAKE_GH_EXIT=17 gh pr list >/dev/null || rc=$?
+check "no agent marker: preserve exit code" 17 "$rc"
+check "explicit login opts in" "token=tok[] config=unset args=pr list" "$(GH_LOGIN=test-bot gh pr list)"
+for marker in CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT; do
+  check "$marker opts in" "token=tok[] config=unset args=pr list" "$(env "$marker=1" gh pr list)"
+done
+check "unmarked extension passthrough" "tok[--json]" "$(gh vault-agent-app-token --json)"
+
+# Remaining checks exercise the agent path independently of the test runner.
+export CODEX_THREAD_ID=shim-test
 
 check "plain" "token=tok[] config=unset args=pr list" "$(gh pr list)"
 check "--repo X" "token=tok[--repo o/r] config=unset args=pr list --repo o/r" "$(gh pr list --repo o/r)"
@@ -59,13 +77,22 @@ check "auth status uses temp config" ok "$r"
 rc=0
 err="$(FAKE_MINT_FAIL=1 gh pr list 2>&1 >/dev/null)" || rc=$?
 check "mint failure exit code" 3 "$rc"
-check "mint failure stderr" "gh vault-agent-app-token: transit down" "$err"
+check "mint failure stderr" "gh vault-agent-app-token: signing unavailable" "$err"
+rc=0
+FAKE_MINT_FAIL=1 FAKE_MINT_FAIL_CODE=2 GH_TOKEN=user gh pr list >/dev/null 2>&1 || rc=$?
+check "agent config error does not fall back to user credentials" 2 "$rc"
 
 check "extension passthrough" "tok[--json]" "$(gh vault-agent-app-token --json)"
 
+if command -v fish >/dev/null 2>&1; then
+  check "fish with an agent marker uses App authentication" "token=tok[] config=unset args=pr list" "$(fish --no-config -c 'gh pr list')"
+  check "fish without an agent marker keeps user authentication" "token=user config=unset args=pr list" "$(GH_TOKEN=user FAKE_MINT_FAIL=1 env -u CODEX_THREAD_ID fish --no-config -c 'gh pr list')"
+fi
+
 # With the real gh: its own credential selection must yield the App token for
 # the target host even when user tokens are inherited.
-real="$(PATH="${PATH#"$work/shim:$work/real:"}" command -v gh || true)"
+# Set GH_SHIM_TEST_REAL_GH to the actual binary when PATH already has a shim.
+real="${GH_SHIM_TEST_REAL_GH:-$(PATH="${PATH#"$work/shim:$work/real:"}" command -v gh || true)}"
 if [ -n "$real" ]; then
   mkdir -p "$work/data/gh/extensions/gh-vault-agent-app-token" "$work/config"
   mkdir -p "$work/realshim" && ln -s "$here/gh-shim.sh" "$work/realshim/gh"
@@ -81,6 +108,8 @@ if [ -n "$real" ]; then
   check "real gh: --hostname GHES" fake-app-token "$(run_real env GH_HOST=github.com gh auth token --hostname ghe.example.com 2>&1)"
   check "real gh: -h GHES" fake-app-token "$(run_real gh auth token -h ghe.example.com 2>&1)"
   check "real gh: GH_HOST GHES" fake-app-token "$(run_real env GH_HOST=ghe.example.com gh auth token 2>&1)"
+  check "real gh: unmarked github.com keeps user token" fake-user-token "$(run_real env -u CODEX_THREAD_ID gh auth token --hostname github.com 2>&1)"
+  check "real gh: unmarked GHES keeps user token" fake-user-token "$(run_real env -u CODEX_THREAD_ID gh auth token --hostname ghe.example.com 2>&1)"
 else
   echo "skip real gh checks (gh not found)"
 fi

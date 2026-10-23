@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# gh shim for agent containers: install as `gh` early on PATH. Every gh call
-# runs with GH_TOKEN (GH_ENTERPRISE_TOKEN for GitHub Enterprise Server) set to
+# gh shim: install as `gh` early on PATH. Calls with a known agent marker or
+# explicit GH_LOGIN run with GH_TOKEN (GH_ENTERPRISE_TOKEN for GHES) set to
 # a GitHub App installation token minted by `gh vault-agent-app-token` for the
-# current agent identity.
+# current agent identity. Other calls pass through with authentication unchanged.
 #
 # If minting fails, its stderr is shown and the shim exits with its code;
 # there is no fallback to a user login.
@@ -25,6 +25,17 @@ done
 case "${1:-}" in
   "" | vault-agent-app-token) exec "$real_gh" "$@" ;;
 esac
+
+# Only intercept calls that request an App identity. Keep the harness marker
+# list in sync with internal/identity.Markers; empty values do not opt in.
+agent=0
+for marker in GH_LOGIN CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT; do
+  if [ -n "${!marker:-}" ]; then
+    agent=1
+    break
+  fi
+done
+[ "$agent" -eq 1 ] || exec "$real_gh" "$@"
 
 # An explicit --repo/-R selects the installation owner, and --hostname (-h
 # for `gh auth`) the host, as gh would use them. (GH_REPO is read by the

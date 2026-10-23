@@ -241,14 +241,23 @@ more than 300 s remain and the entry was minted by the configured App. A per-ent
 ## gh shim
 
 [`contrib/gh-shim.sh`](contrib/gh-shim.sh) is a drop-in `gh` wrapper for agent
-containers. Put it on `PATH` ahead of the real `gh` as `gh`. It mints a token
-for every call (passing `--repo`/`-R` and `--hostname`, or `-h` for `gh auth`,
+containers and shared shell setups. Put it on `PATH` ahead of the real `gh` as
+`gh`. It uses App authentication only when `GH_LOGIN` or a supported harness
+marker (`CLAUDECODE`, `CODEX_THREAD_ID`, `CURSOR_AGENT`, `PI_CODING_AGENT`,
+`COPILOT_CLI`, or `ANTIGRAVITY_AGENT`) is nonempty. Otherwise it passes the call
+straight through to the real `gh`, leaving authentication and configuration
+unchanged. This works independently of which shell launches the command.
+
+For calls using App authentication, it obtains a token (reusing the extension's
+cache when valid, and passing `--repo`/`-R` and `--hostname`, or `-h` for `gh auth`,
 through so owner and host match), drops any inherited `GH_TOKEN`,
 `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN`, sets
 `GH_TOKEN` (or `GH_ENTERPRISE_TOKEN` when the target is a GitHub Enterprise
 Server host) and execs the real `gh`. `gh auth status` runs against a temporary
-`GH_CONFIG_DIR`. If minting fails the shim exits with the extension's code;
-it never falls back to a user login.
+`GH_CONFIG_DIR`. If an agent is detected but its identity is not configured, or
+token acquisition fails, the shim exits with the extension's code; it never
+falls back to a user login for that call. Unsupported harnesses can opt in with
+`GH_LOGIN`. Direct `gh vault-agent-app-token` calls always reach the extension.
 
 ## Development
 
