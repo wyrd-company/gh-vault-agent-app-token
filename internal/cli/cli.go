@@ -243,16 +243,13 @@ func run(env Env) error {
 		}
 	}
 
+	iid, static := app.Installation(owner)
 	if store != nil && !o.force {
-		if e := store.Get(scope); e.Valid(env.Now()) && e.AppID == app.AppID {
-			if e.InstallationID == 0 {
-				e.InstallationID, _ = app.Installation(owner)
-			}
+		if e := store.Get(scope); e.Valid(env.Now()) && e.AppID == app.AppID && (!static || e.InstallationID == iid) {
 			return output(env.Stdout, o.json, e, login, owner)
 		}
 	}
 
-	iid, static := app.Installation(owner)
 	if !static {
 		t, err := signJWT()
 		if err != nil {
