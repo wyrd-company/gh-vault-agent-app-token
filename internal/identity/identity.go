@@ -22,6 +22,8 @@ var Markers = []Marker{
 	{"CODEX_THREAD_ID", "codex"},
 	{"CURSOR_AGENT", "cursor"},
 	{"PI_CODING_AGENT", "pi"},
+	{"COPILOT_CLI", "copilot"},
+	{"ANTIGRAVITY_AGENT", "antigravity"},
 }
 
 var ErrNoIdentity = errors.New("no agent identity (set GH_LOGIN or --login)")

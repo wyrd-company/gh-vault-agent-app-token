@@ -54,6 +54,8 @@ harnesses:
   codex: example-codex[bot]          # CODEX_THREAD_ID
   cursor: example-cursor[bot]        # CURSOR_AGENT
   pi: example-pi[bot]                # PI_CODING_AGENT
+  copilot: example-copilot[bot]      # COPILOT_CLI
+  antigravity: example-antigravity[bot] # ANTIGRAVITY_AGENT
 
 apps:
   example-claude[bot]:
@@ -90,8 +92,18 @@ Azure signing ignores the Transit address, token, and TLS settings below.
 1. `--login`
 2. `GH_LOGIN`
 3. Harness markers, checked in order `CLAUDECODE`, `CODEX_THREAD_ID`,
-   `CURSOR_AGENT`, `PI_CODING_AGENT`, mapped to a login through `harnesses:`.
+   `CURSOR_AGENT`, `PI_CODING_AGENT`, `COPILOT_CLI`, `ANTIGRAVITY_AGENT`, mapped
+   to a login through `harnesses:`.
 4. Otherwise exit 2.
+
+Copilot CLI exports `COPILOT_CLI` (observed as `true`), and the Antigravity local
+harness exports `ANTIGRAVITY_AGENT` (observed as `1`). As with the existing
+markers, a non-empty value selects the corresponding `harnesses:` mapping.
+Shared editor/SDK variables such as `CLAUDE_AGENT_SDK_VERSION` do not select a
+harness. If a wrapper strips the marker, set `GH_LOGIN` or use `--login`.
+
+Multiple harnesses can map to the same configured App login. A detected harness
+without a mapping exits 2 rather than falling through to another identity.
 
 A resolved login without an `apps:` entry is exit 2 `no app configured for '<login>'`.
 
