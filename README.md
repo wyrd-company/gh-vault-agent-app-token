@@ -253,6 +253,13 @@ Otherwise it passes the call straight through to the real `gh`, leaving
 authentication and configuration unchanged. This works independently of which
 shell launches the command.
 
+Grok Build also sets `GROK_AGENT=1` for commands you type in its `!` mode.
+To use your stored GitHub CLI login for one of those commands, put `--as-user`
+first, for example `!gh --as-user auth status`. If you already use the shim with
+Grok Build, configure `harnesses.grok` before upgrading. When the shim selects
+Grok and no login is mapped, it reports an error instead of falling back to
+your user login.
+
 For calls using App authentication, it obtains a token (reusing the extension's
 cache when valid, and passing `--repo`/`-R` and `--hostname`, or `-h` for `gh auth`,
 through so owner and host match), drops any inherited `GH_TOKEN`,

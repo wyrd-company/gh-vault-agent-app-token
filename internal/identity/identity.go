@@ -10,7 +10,8 @@ import (
 	"strings"
 )
 
-// Marker is a harness environment marker. An empty Value matches any nonempty setting.
+// Marker identifies a harness by an environment variable. If Value is empty,
+// any nonempty value matches; otherwise the match must be exact.
 type Marker struct {
 	Env     string // environment variable that identifies the harness
 	Harness string // key looked up in the config's harnesses map
