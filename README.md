@@ -48,7 +48,7 @@ The first file found of `$GH_VAULT_APP_TOKEN_CONFIG`,
 agent_addr: http://127.0.0.1:8100   # optional
 transit_mount: transit               # optional, default "transit"
 
-# Which login to use when a harness's environment marker is set.
+# Which login to use when a harness's environment marker matches.
 harnesses:
   claude: example-claude[bot]        # CLAUDECODE
   codex: example-codex[bot]          # CODEX_THREAD_ID
@@ -56,6 +56,7 @@ harnesses:
   pi: example-pi[bot]                # PI_CODING_AGENT
   copilot: example-copilot[bot]      # COPILOT_CLI
   antigravity: example-antigravity[bot] # ANTIGRAVITY_AGENT
+  grok: example-grok[bot]            # GROK_AGENT=1
 
 apps:
   example-claude[bot]:
@@ -92,13 +93,16 @@ Azure signing ignores the Transit address, token, and TLS settings below.
 1. `--login`
 2. `GH_LOGIN`
 3. Harness markers, checked in order `CLAUDECODE`, `CODEX_THREAD_ID`,
-   `CURSOR_AGENT`, `PI_CODING_AGENT`, `COPILOT_CLI`, `ANTIGRAVITY_AGENT`, mapped
-   to a login through `harnesses:`.
+   `CURSOR_AGENT`, `PI_CODING_AGENT`, `COPILOT_CLI`, `ANTIGRAVITY_AGENT`,
+   `GROK_AGENT=1`, mapped to a login through `harnesses:`.
 4. Otherwise exit 2.
 
 Copilot CLI exports `COPILOT_CLI` (observed as `true`), and the Antigravity local
 harness exports `ANTIGRAVITY_AGENT` (observed as `1`). As with the existing
 markers, a non-empty value selects the corresponding `harnesses:` mapping.
+Grok Build exports `GROK_AGENT=1` to agent terminal commands. Only that exact
+value selects `harnesses.grok`; other values can be Grok profile names. Point
+`harnesses.grok` at a login configured under `apps:`.
 Shared editor/SDK variables such as `CLAUDE_AGENT_SDK_VERSION` do not select a
 harness. If a wrapper strips the marker, set `GH_LOGIN` or use `--login`.
 
@@ -244,9 +248,10 @@ more than 300 s remain and the entry was minted by the configured App. A per-ent
 containers and shared shell setups. Put it on `PATH` ahead of the real `gh` as
 `gh`. It uses App authentication only when `GH_LOGIN` or a supported harness
 marker (`CLAUDECODE`, `CODEX_THREAD_ID`, `CURSOR_AGENT`, `PI_CODING_AGENT`,
-`COPILOT_CLI`, or `ANTIGRAVITY_AGENT`) is nonempty. Otherwise it passes the call
-straight through to the real `gh`, leaving authentication and configuration
-unchanged. This works independently of which shell launches the command.
+`COPILOT_CLI`, or `ANTIGRAVITY_AGENT`) is nonempty, or when `GROK_AGENT=1`.
+Otherwise it passes the call straight through to the real `gh`, leaving
+authentication and configuration unchanged. This works independently of which
+shell launches the command.
 
 For calls using App authentication, it obtains a token (reusing the extension's
 cache when valid, and passing `--repo`/`-R` and `--hostname`, or `-h` for `gh auth`,

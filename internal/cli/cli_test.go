@@ -139,10 +139,11 @@ func TestCacheHitDoesNotInitializeSigner(t *testing.T) {
 	}
 }
 
-func TestMintWithCopilotAndAntigravityMarkers(t *testing.T) {
+func TestMintWithHarnessMarkers(t *testing.T) {
 	for _, tc := range []struct{ marker, value, harness string }{
 		{"COPILOT_CLI", "true", "copilot"},
 		{"ANTIGRAVITY_AGENT", "1", "antigravity"},
+		{"GROK_AGENT", "1", "grok"},
 	} {
 		t.Run(tc.harness, func(t *testing.T) {
 			h := newHarness(t, "")

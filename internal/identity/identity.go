@@ -10,20 +10,22 @@ import (
 	"strings"
 )
 
-// Marker is a harness environment marker.
+// Marker is a harness environment marker. An empty Value matches any nonempty setting.
 type Marker struct {
-	Env     string // environment variable whose presence identifies the harness
+	Env     string // environment variable that identifies the harness
 	Harness string // key looked up in the config's harnesses map
+	Value   string
 }
 
 // Markers are checked in this order.
 var Markers = []Marker{
-	{"CLAUDECODE", "claude"},
-	{"CODEX_THREAD_ID", "codex"},
-	{"CURSOR_AGENT", "cursor"},
-	{"PI_CODING_AGENT", "pi"},
-	{"COPILOT_CLI", "copilot"},
-	{"ANTIGRAVITY_AGENT", "antigravity"},
+	{"CLAUDECODE", "claude", ""},
+	{"CODEX_THREAD_ID", "codex", ""},
+	{"CURSOR_AGENT", "cursor", ""},
+	{"PI_CODING_AGENT", "pi", ""},
+	{"COPILOT_CLI", "copilot", ""},
+	{"ANTIGRAVITY_AGENT", "antigravity", ""},
+	{"GROK_AGENT", "grok", "1"},
 }
 
 var ErrNoIdentity = errors.New("no agent identity (set GH_LOGIN or --login)")
@@ -38,7 +40,7 @@ func ResolveLogin(flagLogin string, getenv func(string) string, harnesses map[st
 		return l, nil
 	}
 	for _, m := range Markers {
-		if getenv(m.Env) == "" {
+		if value := getenv(m.Env); value == "" || (m.Value != "" && value != m.Value) {
 			continue
 		}
 		if l := harnesses[m.Harness]; l != "" {

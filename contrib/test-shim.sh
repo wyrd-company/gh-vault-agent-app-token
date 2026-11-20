@@ -27,7 +27,7 @@ chmod +x "$work/real/gh"
 
 export PATH="$work/shim:$work/real:$PATH"
 unset GH_TOKEN GITHUB_TOKEN GH_CONFIG_DIR GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_REPO
-unset GH_LOGIN CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT
+unset GH_LOGIN CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT GROK_AGENT
 fails=0
 check() { # name expected actual
   if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: want [$2] got [$3]"; fails=$((fails + 1)); fi
@@ -36,12 +36,13 @@ check() { # name expected actual
 check "no agent marker: no mint" "token= config=unset args=pr list" "$(FAKE_MINT_FAIL=1 gh pr list)"
 check "no agent marker: preserve token and config" "token=user config=/user-config args=auth status" "$(GH_TOKEN=user GH_CONFIG_DIR=/user-config FAKE_MINT_FAIL=1 gh auth status)"
 check "no agent marker: preserve enterprise token" "enterprise=user-ghes token=user args=api /meta" "$(GH_TOKEN=user GH_ENTERPRISE_TOKEN=user-ghes FAKE_MINT_FAIL=1 gh api /meta)"
-check "empty markers: no mint" "token= config=unset args=pr list" "$(CLAUDECODE= CODEX_THREAD_ID= CURSOR_AGENT= PI_CODING_AGENT= COPILOT_CLI= ANTIGRAVITY_AGENT= GH_LOGIN= FAKE_MINT_FAIL=1 gh pr list)"
+check "empty markers: no mint" "token= config=unset args=pr list" "$(CLAUDECODE= CODEX_THREAD_ID= CURSOR_AGENT= PI_CODING_AGENT= COPILOT_CLI= ANTIGRAVITY_AGENT= GROK_AGENT= GH_LOGIN= FAKE_MINT_FAIL=1 gh pr list)"
+check "Grok profile: preserve user token" "token=user config=unset args=pr list" "$(GROK_AGENT=reviewer GH_TOKEN=user FAKE_MINT_FAIL=1 gh pr list)"
 rc=0
 FAKE_GH_EXIT=17 gh pr list >/dev/null || rc=$?
 check "no agent marker: preserve exit code" 17 "$rc"
 check "explicit login opts in" "token=tok[] config=unset args=pr list" "$(GH_LOGIN=test-bot gh pr list)"
-for marker in CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT; do
+for marker in CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT GROK_AGENT; do
   check "$marker opts in" "token=tok[] config=unset args=pr list" "$(env "$marker=1" gh pr list)"
 done
 check "unmarked extension passthrough" "tok[--json]" "$(gh vault-agent-app-token --json)"
