@@ -1,0 +1,48 @@
+{
+  "$schema": "https://intentional.foo/schemas/release-model/1",
+  "paths": {
+    "config": ".intentional/config.yml",
+    "intents": ".intentional/intents",
+    "model": ".intentional/release-model.json"
+  },
+  "release_groups": {
+    "fixed": [],
+    "linked": []
+  },
+  "release_units": {
+    "gh-vault-agent-app-token": {
+      "changelog": "CHANGELOG.md",
+      "depends_on": [],
+      "disposition": "managed",
+      "ecosystems": [
+        "go"
+      ],
+      "path": ".",
+      "projections": [
+        {
+          "adapter": "go",
+          "file": "go.mod",
+          "generic": false,
+          "mode": "none",
+          "native_identity": "github.com/wyrd-company/gh-vault-agent-app-token",
+          "workspace_file": "go.mod"
+        }
+      ],
+      "release_record": "required",
+      "sources": [
+        {
+          "detector": "go-module",
+          "path": "go.mod"
+        }
+      ],
+      "tags": {
+        "primary": {
+          "role": "primary",
+          "tag_after": [],
+          "template": "{version}"
+        }
+      }
+    }
+  },
+  "workspace_tags": {}
+}

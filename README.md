@@ -15,6 +15,8 @@ gh extension install wyrd-company/gh-vault-agent-app-token
 GH_TOKEN="$(gh vault-agent-app-token)" gh pr list
 ```
 
+See the [changelog](CHANGELOG.md) for released changes.
+
 ## Usage
 
 ```
@@ -296,7 +298,38 @@ bash contrib/test-shim.sh
 go test -tags integration -run Integration -v ./internal/cli/
 ```
 
-Releases: push a version tag without a `v` prefix (e.g. `1.2.0`; a tag
-containing `-` becomes a prerelease); the workflow publishes
-`gh-vault-agent-app-token_<tag>_<os>-<arch>` binaries for linux/amd64,
-linux/arm64, darwin/arm64 and windows/amd64.
+### Versioning and releases
+
+Use [Intentional](https://wyrd.foo/docs/intentional/usage) to record pending
+changes. For each user-visible change, choose the appropriate `major`, `minor`,
+or `patch` bump, then commit the generated intent with the change. Before
+`1.0.0`, a `major` intent advances `0.x`; `minor` and `patch` both advance the
+patch number.
+
+```sh
+intentional add --release-unit gh-vault-agent-app-token:patch --message "Describe the user-visible change."
+intentional check
+```
+
+Intentional derives the current version from Git tags, not `go.mod`. Fetch the
+tags and start a release branch from an up-to-date `main`. Use the same
+Intentional version as CI. Save the plan outside the checkout, then apply it
+to update `CHANGELOG.md` and consume the included intents for a stable release:
+
+```sh
+git fetch origin --tags
+release_plan="$(mktemp)"
+intentional plan > "$release_plan"
+intentional apply
+```
+
+Commit the changelog and intent changes and land them on `main` through the
+normal review process. From the resulting release commit, run
+`intentional tag --plan "$release_plan"` and push the exact tag it creates
+(for example, `git push origin tag 1.2.0`). Keep the plan file until the tag is
+created. For a prerelease, pass the same `--channel` to `plan`, `apply`, and
+`tag`.
+
+Tags use bare versions without a `v` prefix. The existing GitHub release
+workflow publishes `gh-vault-agent-app-token_<tag>_<os>-<arch>` binaries for
+linux/amd64, linux/arm64, darwin/arm64, and windows/amd64.
