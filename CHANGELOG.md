@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+### Features
+
+- Support Grok Build in the token command and `gh` shim. Map `harnesses.grok` to a configured GitHub App login before upgrading if you already use the shim in Grok. Grok shell calls, including commands you type in `!` mode, use that App by default; use `!gh --as-user …` to use your stored GitHub CLI login for one command.
+
 ## 0.4.0
 
 Released 2026-10-23.
