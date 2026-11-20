@@ -1,0 +1,20 @@
+$schema: https://intentional.foo/schemas/0.2/config
+contract: contract-2
+settings:
+  internal-dependency-bump: patch
+discovery:
+  managed-paths:
+  - detector: go-module
+    path: go.mod
+    release-unit: gh-vault-agent-app-token
+release-units:
+  gh-vault-agent-app-token:
+    path: .
+    projections:
+    - adapter: go
+      file: go.mod
+      mode: none
+    tags:
+      primary:
+        role: primary
+        template: '{version}'

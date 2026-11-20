@@ -12,6 +12,17 @@ env:
   OPENBAO_VERSION: 2.4.1
 
 jobs:
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: wyrd-company/intentional@f2d3d76bb913eccd298955509a433c73c555e0b8 # 0.5.0
+        with:
+          command: check
+          intentional-version: 0.5.0
+
   test:
     strategy:
       matrix:
