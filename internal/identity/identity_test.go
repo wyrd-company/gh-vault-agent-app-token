@@ -18,8 +18,9 @@ func TestResolveLoginOrder(t *testing.T) {
 		"pi":          "example-pi[bot]",
 		"copilot":     "example-copilot[bot]",
 		"antigravity": "example-antigravity[bot]",
+		"grok":        "example-grok[bot]",
 	}
-	allMarkers := map[string]string{"CLAUDECODE": "1", "CODEX_THREAD_ID": "t", "CURSOR_AGENT": "1", "PI_CODING_AGENT": "1", "COPILOT_CLI": "true", "ANTIGRAVITY_AGENT": "1"}
+	allMarkers := map[string]string{"CLAUDECODE": "1", "CODEX_THREAD_ID": "t", "CURSOR_AGENT": "1", "PI_CODING_AGENT": "1", "COPILOT_CLI": "true", "ANTIGRAVITY_AGENT": "1", "GROK_AGENT": "1"}
 	with := func(extra map[string]string) map[string]string {
 		m := map[string]string{}
 		for k, v := range allMarkers {
@@ -43,7 +44,8 @@ func TestResolveLoginOrder(t *testing.T) {
 		{"cursor", "", map[string]string{"CURSOR_AGENT": "1", "PI_CODING_AGENT": "1", "COPILOT_CLI": "true", "ANTIGRAVITY_AGENT": "1"}, "example-cursor[bot]"},
 		{"pi", "", map[string]string{"PI_CODING_AGENT": "1", "COPILOT_CLI": "true", "ANTIGRAVITY_AGENT": "1"}, "example-pi[bot]"},
 		{"copilot", "", map[string]string{"COPILOT_CLI": "true", "ANTIGRAVITY_AGENT": "1"}, "example-copilot[bot]"},
-		{"antigravity", "", map[string]string{"ANTIGRAVITY_AGENT": "1"}, "example-antigravity[bot]"},
+		{"antigravity", "", map[string]string{"ANTIGRAVITY_AGENT": "1", "GROK_AGENT": "1"}, "example-antigravity[bot]"},
+		{"grok", "", map[string]string{"GROK_AGENT": "1"}, "example-grok[bot]"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -58,7 +60,8 @@ func TestResolveLoginOrder(t *testing.T) {
 func TestResolveLoginErrors(t *testing.T) {
 	for _, env := range []map[string]string{
 		nil,
-		{"COPILOT_CLI": "", "ANTIGRAVITY_AGENT": ""},
+		{"COPILOT_CLI": "", "ANTIGRAVITY_AGENT": "", "GROK_AGENT": ""},
+		{"GROK_AGENT": "reviewer"},
 		{"CLAUDE_AGENT_SDK_VERSION": "0.3.276", "T3CODE_HOME": "/tmp/host", "GEMINI_HOME": "/tmp/gemini", "COPILOT_CLI_BINARY_VERSION": "1.0.98", "ANTIGRAVITY_HARNESS_PATH": "/tmp/localharness_external"},
 	} {
 		if _, err := ResolveLogin("", envMap(env), nil); !errors.Is(err, ErrNoIdentity) {
@@ -69,6 +72,7 @@ func TestResolveLoginErrors(t *testing.T) {
 		{"CURSOR_AGENT", "cursor"},
 		{"COPILOT_CLI", "copilot"},
 		{"ANTIGRAVITY_AGENT", "antigravity"},
+		{"GROK_AGENT", "grok"},
 	} {
 		t.Run(tc.harness, func(t *testing.T) {
 			_, err := ResolveLogin("", envMap(map[string]string{tc.marker: "1"}), map[string]string{"claude": "x"})

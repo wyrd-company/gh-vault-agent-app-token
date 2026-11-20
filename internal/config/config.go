@@ -65,7 +65,7 @@ type Config struct {
 	AgentAddr    string `yaml:"agent_addr"`
 	TransitMount string `yaml:"transit_mount"`
 	// Harnesses maps a harness name to the login used when its environment
-	// marker is set.
+	// marker matches.
 	Harnesses map[string]string `yaml:"harnesses"`
 	Apps      map[string]*App   `yaml:"apps"`
 

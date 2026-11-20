@@ -36,7 +36,7 @@ case "${1:-}" in
 esac
 
 # Only intercept calls that request an App identity. Keep the harness marker
-# list in sync with internal/identity.Markers; empty values do not opt in.
+# list in sync with internal/identity.Markers; GROK_AGENT requires exactly 1.
 agent=0
 for marker in GH_LOGIN CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT COPILOT_CLI ANTIGRAVITY_AGENT; do
   if [ -n "${!marker:-}" ]; then
@@ -44,7 +44,7 @@ for marker in GH_LOGIN CLAUDECODE CODEX_THREAD_ID CURSOR_AGENT PI_CODING_AGENT C
     break
   fi
 done
-[ "$agent" -eq 1 ] || exec "$real_gh" "$@"
+[ "$agent" -eq 1 ] || [ "${GROK_AGENT:-}" = 1 ] || exec "$real_gh" "$@"
 
 # An explicit --repo/-R selects the installation owner, and --hostname (-h
 # for `gh auth`) the host, as gh would use them. (GH_REPO is read by the
